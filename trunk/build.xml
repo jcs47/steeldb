@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- WARNING: Eclipse auto-generated file.
+              Any modifications will be overwritten.
+              To include a user specific buildfile here, simply create one in the same
+              directory with the processing instruction <?eclipse.ant.import?>
+              as the first entry and export the buildfile again. -->
+<project basedir="." default="build" name="divdb">
+    <property environment="env"/>
+    <property name="ECLIPSE_HOME" value="../../../../usr/lib/eclipse"/>
+    <property name="debuglevel" value="source,lines,vars"/>
+    <property name="target" value="1.6"/>
+    <property name="source" value="1.6"/>
+    <path id="divdb.classpath">
+        <pathelement location="bin"/>
+        <pathelement location="lib/BFT-SMaRt.jar"/>
+        <pathelement location="lib/commons-codec-1.5.jar"/>
+        <pathelement location="lib/netty-3.1.1.GA.jar"/>
+        <pathelement location="lib/slf4j-api-1.5.8.jar"/>
+        <pathelement location="lib/slf4j-jdk14-1.5.8.jar"/>
+        <pathelement location="lib/commons-lang-2.6.jar"/>
+        <pathelement location="lib/jaybird-full-2.1.6.jar"/>
+        <pathelement location="lib/mysql-connector-java-5.1.16-bin.jar"/>
+        <pathelement location="lib/hsqldb.jar"/>
+        <pathelement location="lib/postgresql-9.1-901.jdbc4.jar"/>
+        <pathelement location="lib/h2-1.3.170.jar"/>
+    </path>
+    <target name="init">
+        <mkdir dir="bin"/>
+        <copy includeemptydirs="false" todir="bin">
+            <fileset dir="src">
+                <exclude name="**/*.java"/>
+            </fileset>
+        </copy>
+    </target>
+    <target name="clean">
+        <delete dir="bin"/>
+    </target>
+    <target depends="clean" name="cleanall"/>
+    <target depends="build-subprojects,build-project" name="build"/>
+    <target name="build-subprojects"/>
+    <target depends="init" name="build-project">
+        <echo message="${ant.project.name}: ${ant.file}"/>
+        <javac debug="true" debuglevel="${debuglevel}" destdir="bin" source="${source}" target="${target}">
+            <src path="src"/>
+            <classpath refid="divdb.classpath"/>
+        </javac>
+    </target>
+    <target description="Build all projects which reference this project. Useful to propagate changes." name="build-refprojects"/>
+    <target description="copy Eclipse compiler jars to ant lib directory" name="init-eclipse-compiler">
+        <copy todir="${ant.library.dir}">
+            <fileset dir="${ECLIPSE_HOME}/plugins" includes="org.eclipse.jdt.core_*.jar"/>
+        </copy>
+        <unzip dest="${ant.library.dir}">
+            <patternset includes="jdtCompilerAdapter.jar"/>
+            <fileset dir="${ECLIPSE_HOME}/plugins" includes="org.eclipse.jdt.core_*.jar"/>
+        </unzip>
+    </target>
+    <target description="compile project with Eclipse compiler" name="build-eclipse-compiler">
+        <property name="build.compiler" value="org.eclipse.jdt.core.JDTCompilerAdapter"/>
+        <antcall target="build"/>
+    </target>
+    <target name="Replica(0)">
+        <java classname="lasige.steeldb.Replica.InitReplica" failonerror="true" fork="yes">
+            <arg line="config/replica0.properties"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="Replica(1)">
+        <java classname="lasige.steeldb.Replica.InitReplica" failonerror="true" fork="yes">
+            <arg line="config/replica1.properties"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="Replica(2)">
+        <java classname="lasige.steeldb.Replica.InitReplica" failonerror="true" fork="yes">
+            <arg line="config/replica2.properties"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="Replica(3)">
+        <java classname="lasige.steeldb.Replica.InitReplica" failonerror="true" fork="yes">
+            <arg line="config/replica3.properties"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="mysql-dropTables">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_mysql.properties -DcommandFile=sqlTableDrops"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="mysql-createTables">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_mysql.properties -DcommandFile=sqlTableCreates"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="mysql-createIndexes">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_mysql.properties -DcommandFile=sqlIndexCreates"/>
+            <arg line="numWarehouses 2"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="mysql-loadData">
+        <java classname="benchmark.LoadData.LoadData" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_mysql.properties"/>
+            <arg line="numWarehouses 2"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="mysql-benchmark">
+        <java classname="benchmark.client.jTPCC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_mysql.properties"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="div-dropTables">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_diverse.properties -DcommandFile=sqlTableDrops"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="div-createTables">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_diverse.properties -DcommandFile=sqlTableCreates"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="div-createIndexes">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_diverse.properties -DcommandFile=sqlIndexCreates"/>
+            <arg line="numWarehouses 10"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="div-loadData">
+        <java classname="benchmark.LoadData.LoadData" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_diverse.properties"/>
+            <arg line="numWarehouses 10"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="div-benchmark">
+        <java classname="benchmark.client.jTPCC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=bft_diverse.properties"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="singledb-dropTables">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=mysql.properties -DcommandFile=sqlTableDrops"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="singledb-createTables">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=mysql.properties -DcommandFile=sqlTableCreates"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="singledb-createIndexes">
+        <java classname="benchmark.jdbc.ExecJDBC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=mysql.properties -DcommandFile=sqlIndexCreates"/>
+            <arg line="numWarehouses 1"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="singledb-loadData">
+        <java classname="benchmark.LoadData.LoadData" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=mysql.properties"/>
+            <arg line="numWarehouses 1"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+    <target name="singledb-benchmark">
+        <java classname="benchmark.client.jTPCC" failonerror="true" fork="yes">
+            <jvmarg line="-Dprop=mysql.properties"/>
+            <classpath refid="divdb.classpath"/>
+        </java>
+    </target>
+</project>
