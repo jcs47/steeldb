@@ -2,7 +2,7 @@ package lasige.steeldb.statemanagement;
 
 import org.apache.log4j.Logger;
 
-import bftsmart.reconfiguration.ServerViewManager;
+import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.statemanagement.ApplicationState;
 import bftsmart.statemanagement.SMMessage;
 import bftsmart.statemanagement.strategy.StandardSMMessage;
@@ -16,7 +16,7 @@ public class StateMessageProcessor extends Thread {
 	private Recoverable recoverable;
 	private StandardSMMessage request;
 	private int me;
-	private ServerViewManager SVManager;
+	private ServerViewController SVController;
 	
     private Logger logger = Logger.getLogger("steeldb_replica");
     private boolean sendState = false;
@@ -25,8 +25,8 @@ public class StateMessageProcessor extends Thread {
 		this.tomLayer = tomLayer;
 		this.recoverable = recoverable;
 		this.request = request;
-		SVManager = tomLayer.reconfManager;
-		me = SVManager.getStaticConf().getProcessId();
+		SVController = tomLayer.controller;
+		me = SVController.getStaticConf().getProcessId();
 		if(request.getReplica() == me)
 			sendState = true;
 	}
@@ -38,7 +38,7 @@ public class StateMessageProcessor extends Thread {
         }
         int[] targets = { request.getSender() };
         SMMessage smsg = new StandardSMMessage(me, request.getEid(), TOMUtil.SM_REPLY,
-        		-1, thisState, SVManager.getCurrentView(), -1, tomLayer.lm.getCurrentLeader());
+        		-1, thisState, SVController.getCurrentView(), -1, tomLayer.lm.getCurrentLeader());
         logger.debug("Sending state");
         tomLayer.getCommunication().send(targets, smsg);
         logger.debug("Sent");

@@ -22,8 +22,8 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.locks.ReentrantLock;
 
-import bftsmart.paxosatwar.executionmanager.ExecutionManager;
-import bftsmart.paxosatwar.messages.PaxosMessage;
+import bftsmart.consensus.executionmanager.ExecutionManager;
+import bftsmart.consensus.messages.PaxosMessage;
 import bftsmart.reconfiguration.views.View;
 import bftsmart.statemanagement.ApplicationState;
 import bftsmart.statemanagement.SMMessage;
@@ -34,8 +34,6 @@ import bftsmart.tom.core.TOMLayer;
 import bftsmart.tom.leaderchange.LCManager;
 import bftsmart.tom.util.TOMUtil;
 import bftsmart.util.Printer;
-
-import org.apache.log4j.Logger;
 
 /**
  * 
@@ -58,7 +56,7 @@ public class DatabaseStateManager extends BaseStateManager {
 
 	@Override
 	public void init(TOMLayer tomLayer, DeliveryThread dt) {
-		SVManager = tomLayer.reconfManager;
+		SVController = tomLayer.controller;
 
 		this.tomLayer = tomLayer;
 		this.dt = dt;
@@ -67,7 +65,7 @@ public class DatabaseStateManager extends BaseStateManager {
 
 		this.replica = 0;
 
-		if (SVManager.getCurrentViewN() > 1 && replica == SVManager.getStaticConf().getProcessId())
+		if (SVController.getCurrentViewN() > 1 && replica == SVController.getStaticConf().getProcessId())
 			changeReplica();
 
 		state = null;
@@ -80,9 +78,9 @@ public class DatabaseStateManager extends BaseStateManager {
 	private void changeReplica() {
 		int pos = -1;
 		do {
-			pos = this.SVManager.getCurrentViewPos(replica);
-			replica = this.SVManager.getCurrentViewProcesses()[(pos + 1) % SVManager.getCurrentViewN()];
-		} while (replica == SVManager.getStaticConf().getProcessId());
+			pos = this.SVController.getCurrentViewPos(replica);
+			replica = this.SVController.getCurrentViewProcesses()[(pos + 1) % SVController.getCurrentViewN()];
+		} while (replica == SVController.getStaticConf().getProcessId());
 	}
 
 	@Override
@@ -90,9 +88,9 @@ public class DatabaseStateManager extends BaseStateManager {
 		if (tomLayer.requestsTimer != null)
 			tomLayer.requestsTimer.clearAll();
 
-		SMMessage smsg = new StandardSMMessage(SVManager.getStaticConf().getProcessId(),
+		SMMessage smsg = new StandardSMMessage(SVController.getStaticConf().getProcessId(),
 				waitingEid, TOMUtil.SM_REQUEST, replica, null, null, -1, -1);
-		tomLayer.getCommunication().send(SVManager.getCurrentViewOtherAcceptors(), smsg);
+		tomLayer.getCommunication().send(SVController.getCurrentViewOtherAcceptors(), smsg);
 
 //		logger.info("I just sent a request to the other replicas for the state up to EID " + waitingEid);
 		Printer.println("I just sent a request to the other replicas for the state up to EID " + waitingEid, "azul");
@@ -101,7 +99,7 @@ public class DatabaseStateManager extends BaseStateManager {
 			public void run() {
 				System.out.println("Timeout to retrieve state");
 				int[] myself = new int[1];
-				myself[0] = SVManager.getStaticConf().getProcessId();
+				myself[0] = SVController.getStaticConf().getProcessId();
 				tomLayer.getCommunication().send(myself, new StandardSMMessage(-1, waitingEid, TOMUtil.TRIGGER_SM_LOCALLY, -1, null, null, -1, -1));
 			}
 		};
@@ -126,9 +124,9 @@ public class DatabaseStateManager extends BaseStateManager {
 
 	@Override
 	public void SMRequestDeliver(SMMessage msg, boolean isBFT) {
-		if (SVManager.getStaticConf().isStateTransferEnabled() && dt.getRecoverer() != null) {
+		if (SVController.getStaticConf().isStateTransferEnabled() && dt.getRecoverer() != null) {
 			StandardSMMessage stdMsg = (StandardSMMessage)msg;
-			boolean sendState = stdMsg.getReplica() == SVManager.getStaticConf().getProcessId();
+			boolean sendState = stdMsg.getReplica() == SVController.getStaticConf().getProcessId();
 //			logger.info("Received ST request from replica " + stdMsg.getSender() + " to eid " + stdMsg.getEid() + ", sendstate: " + sendState);
 			Printer.println("Received ST request from replica " + stdMsg.getSender() + " to eid " + stdMsg.getEid() + ", sendstate: " + sendState, "azul");
 			ApplicationState thisState = dt.getRecoverer().getState(msg.getEid(), sendState);
@@ -136,8 +134,8 @@ public class DatabaseStateManager extends BaseStateManager {
 				thisState = dt.getRecoverer().getState(-1, sendState);
 			}
 			int[] targets = { msg.getSender() };
-			SMMessage smsg = new StandardSMMessage(SVManager.getStaticConf().getProcessId(),
-					msg.getEid(), TOMUtil.SM_REPLY, -1, thisState, SVManager.getCurrentView(), lcManager.getLastReg(), tomLayer.lm.getCurrentLeader());
+			SMMessage smsg = new StandardSMMessage(SVController.getStaticConf().getProcessId(),
+					msg.getEid(), TOMUtil.SM_REPLY, -1, thisState, SVController.getCurrentView(), lcManager.getLastReg(), tomLayer.lm.getCurrentLeader());
 			Printer.println("Sending state", "blue");
 			tomLayer.getCommunication().send(targets, smsg);
 			Printer.println("Sent", "blue");
@@ -147,7 +145,7 @@ public class DatabaseStateManager extends BaseStateManager {
 	@Override
 	public void SMReplyDeliver(SMMessage msg, boolean isBFT) {
 		lockTimer.lock();
-		if (SVManager.getStaticConf().isStateTransferEnabled()) {
+		if (SVController.getStaticConf().isStateTransferEnabled()) {
 			if (waitingEid != -1 && msg.getEid() == waitingEid) {
 				int currentRegency = -1;
 				int currentLeader = -1;
@@ -165,7 +163,7 @@ public class DatabaseStateManager extends BaseStateManager {
 				} else {
 					currentLeader = tomLayer.lm.getCurrentLeader();
 					currentRegency = lcManager.getLastReg();
-					currentView = SVManager.getCurrentView();
+					currentView = SVController.getCurrentView();
 				}
 
 				if (msg.getSender() == replica && msg.getState().getSerializedState() != null) {
@@ -188,7 +186,7 @@ public class DatabaseStateManager extends BaseStateManager {
 						//                            hash = tomLayer.computeHash(state.getSerializedState());
 						//                            if (otherReplicaState != null) {
 						//                                if (Arrays.equals(hash, otherReplicaState.getStateHash())) haveState = 1;
-						//                                else if (getNumEqualStates() > SVManager.getCurrentViewF())
+						//                                else if (getNumEqualStates() > SVController.getCurrentViewF())
 						//                                    haveState = -1;
 						//                            }
 					}
@@ -200,7 +198,7 @@ public class DatabaseStateManager extends BaseStateManager {
 					System.out.println("currentRegency: " + currentRegency);
 					System.out.println("currentLeader: " + currentLeader);
 					System.out.println("currentView: " + (currentView != null));
-					System.out.println("SVManager.getCurrentView(): " + SVManager.getCurrentView());
+					System.out.println("SVController.getCurrentView(): " + SVController.getCurrentView());
 
 					if (otherReplicaState != null && haveState == 1 && currentRegency > -1 &&
 							currentLeader > -1 && currentView != null) {
@@ -228,10 +226,10 @@ public class DatabaseStateManager extends BaseStateManager {
 
 						tomLayer.processOutOfContext();
 
-						if (SVManager.getCurrentViewId() != currentView.getId()) {
+						if (SVController.getCurrentViewId() != currentView.getId()) {
 							System.out.println("Installing current view!");
-							SVManager.reconfigureTo(currentView);
-							System.out.println("After install: " + SVManager.getCurrentView());
+							SVController.reconfigureTo(currentView);
+							System.out.println("After install: " + SVController.getCurrentView());
 						}
 
 						dt.canDeliver();
@@ -249,7 +247,7 @@ public class DatabaseStateManager extends BaseStateManager {
 							appStateOnly = false;
 							tomLayer.resumeLC();
 						}
-					} else if (otherReplicaState == null && (SVManager.getCurrentViewN() / 2) < getReplies()) {
+					} else if (otherReplicaState == null && (SVController.getCurrentViewN() / 2) < getReplies()) {
 						waitingEid = -1;
 						reset();
 
@@ -279,7 +277,7 @@ public class DatabaseStateManager extends BaseStateManager {
 	 * @return The state sent from other replica
 	 */
 	private ApplicationState getOtherReplicaState() {
-		int[] processes = SVManager.getCurrentViewProcesses();
+		int[] processes = SVController.getCurrentViewProcesses();
 		for(int process : processes) {
 			if(process == replica)
 				continue;

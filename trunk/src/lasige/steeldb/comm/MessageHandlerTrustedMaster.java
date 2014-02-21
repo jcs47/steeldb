@@ -11,7 +11,6 @@ import lasige.steeldb.client.SteelDBListener;
 import lasige.steeldb.jdbc.BFTRowSet;
 import lasige.steeldb.jdbc.ResultSetData;
 
-import bftsmart.reconfiguration.ClientViewManager;
 import bftsmart.tom.ServiceProxy;
 import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
@@ -24,7 +23,6 @@ public class MessageHandlerTrustedMaster {
 	private boolean transactionReadOnly;
 	private LinkedList<byte[]> resHashes;
 	private LinkedList<Message> operations;
-	private ClientViewManager viewManager;
 	private static final String CONFIG_FOLDER = System.getProperty("divdb.folder", "config");
 	private static final int FIRST_CLIENT_ID = Integer.valueOf(System.getProperty("divdb.firstclient", "0"));
 	private final int clientId;
@@ -39,7 +37,6 @@ public class MessageHandlerTrustedMaster {
 		transactionReadOnly = true;
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
-		viewManager = proxy.getViewManager();
 		this.clientId = clientId;
 		master = 0;
 		logger.debug("Client " + clientId + "opened a connection. MessageHandler created");
@@ -48,7 +45,6 @@ public class MessageHandlerTrustedMaster {
 	public MessageHandlerTrustedMaster(int clientId, boolean replica) {
 		proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
 		transactionReadOnly = true;
-		viewManager = proxy.getViewManager();
 		this.clientId = clientId;
 		master = 0;
 //		logger.debug("Opening connection for client " + proxy.getProcessId());
