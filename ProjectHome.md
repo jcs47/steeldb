@@ -1,0 +1,1 @@
+StellDB is a database replication middleware built as client of BFT-SMaRt. It implements the JDBC specification and tolerates crash and Byzantine faults.
