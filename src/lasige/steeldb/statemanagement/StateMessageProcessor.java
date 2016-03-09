@@ -32,13 +32,13 @@ public class StateMessageProcessor extends Thread {
 	}
 	
 	public void run() {
-        ApplicationState thisState = recoverable.getState(request.getEid(), sendState);
+        ApplicationState thisState = recoverable.getState(request.getCID(), sendState);
         if (thisState == null) {
           thisState = recoverable.getState(-1, sendState);
         }
         int[] targets = { request.getSender() };
-        SMMessage smsg = new StandardSMMessage(me, request.getEid(), TOMUtil.SM_REPLY,
-        		-1, thisState, SVController.getCurrentView(), -1, tomLayer.lm.getCurrentLeader());
+        SMMessage smsg = new StandardSMMessage(me, request.getCID(), TOMUtil.SM_REPLY,
+        		-1, thisState, SVController.getCurrentView(), -1, tomLayer.execManager.getCurrentLeader());
         logger.debug("Sending state");
         tomLayer.getCommunication().send(targets, smsg);
         logger.debug("Sent");

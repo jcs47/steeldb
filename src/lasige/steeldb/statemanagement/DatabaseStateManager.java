@@ -22,8 +22,8 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.locks.ReentrantLock;
 
-import bftsmart.consensus.executionmanager.ExecutionManager;
-import bftsmart.consensus.messages.PaxosMessage;
+import bftsmart.tom.core.ExecutionManager;
+import bftsmart.consensus.messages.ConsensusMessage;
 import bftsmart.reconfiguration.views.View;
 import bftsmart.statemanagement.ApplicationState;
 import bftsmart.statemanagement.SMMessage;
@@ -31,9 +31,8 @@ import bftsmart.statemanagement.strategy.BaseStateManager;
 import bftsmart.statemanagement.strategy.StandardSMMessage;
 import bftsmart.tom.core.DeliveryThread;
 import bftsmart.tom.core.TOMLayer;
-import bftsmart.tom.leaderchange.LCManager;
 import bftsmart.tom.util.TOMUtil;
-import bftsmart.util.Printer;
+import org.apache.log4j.Logger;
 
 /**
  * 
@@ -48,11 +47,11 @@ public class DatabaseStateManager extends BaseStateManager {
 	private final static long INIT_TIMEOUT = 40000;
 	private long timeout = INIT_TIMEOUT;
 
-	private DeliveryThread dt;
-	private LCManager lcManager;
+	//private DeliveryThread dt;
+	//private LCManager lcManager;
 	private ExecutionManager execManager;
 
-//    private Logger logger = Logger.getLogger("steeldb_replica");
+        private Logger logger = Logger.getLogger("steeldb_replica");
 
 	@Override
 	public void init(TOMLayer tomLayer, DeliveryThread dt) {
@@ -60,7 +59,7 @@ public class DatabaseStateManager extends BaseStateManager {
 
 		this.tomLayer = tomLayer;
 		this.dt = dt;
-		this.lcManager = tomLayer.getLCManager();
+		//this.lcManager = tomLayer.getSynchronizer().getLCManager();
 		this.execManager = tomLayer.execManager;
 
 		this.replica = 0;
@@ -69,8 +68,8 @@ public class DatabaseStateManager extends BaseStateManager {
 			changeReplica();
 
 		state = null;
-		lastEid = 1;
-		waitingEid = -1;
+		lastCID = -1;
+		waitingCID = -1;
 
 		appStateOnly = false;
 	}
@@ -89,18 +88,17 @@ public class DatabaseStateManager extends BaseStateManager {
 			tomLayer.requestsTimer.clearAll();
 
 		SMMessage smsg = new StandardSMMessage(SVController.getStaticConf().getProcessId(),
-				waitingEid, TOMUtil.SM_REQUEST, replica, null, null, -1, -1);
+				waitingCID, TOMUtil.SM_REQUEST, replica, null, null, -1, -1);
 		tomLayer.getCommunication().send(SVController.getCurrentViewOtherAcceptors(), smsg);
 
-//		logger.info("I just sent a request to the other replicas for the state up to EID " + waitingEid);
-		Printer.println("I just sent a request to the other replicas for the state up to EID " + waitingEid, "azul");
+		logger.info("I just sent a request to the other replicas for the state up to EID " + waitingCID);
 
 		TimerTask stateTask =  new TimerTask() {
 			public void run() {
 				System.out.println("Timeout to retrieve state");
 				int[] myself = new int[1];
 				myself[0] = SVController.getStaticConf().getProcessId();
-				tomLayer.getCommunication().send(myself, new StandardSMMessage(-1, waitingEid, TOMUtil.TRIGGER_SM_LOCALLY, -1, null, null, -1, -1));
+				tomLayer.getCommunication().send(myself, new StandardSMMessage(-1, waitingCID, TOMUtil.TRIGGER_SM_LOCALLY, -1, null, null, -1, -1));
 			}
 		};
 
@@ -112,8 +110,7 @@ public class DatabaseStateManager extends BaseStateManager {
 	@Override
 	public void stateTimeout() {
 		lockTimer.lock();
-//		logger.error("Timeout for the replica that was supposed to send the complete state. Changing desired replica.");
-		Printer.println("Timeout for the replica that was supposed to send the complete state. Changing desired replica.", "azul");
+		logger.error("Timeout for the replica that was supposed to send the complete state. Changing desired replica.");
 		if (stateTimer != null)
 			stateTimer.cancel();
 		changeReplica();
@@ -127,18 +124,17 @@ public class DatabaseStateManager extends BaseStateManager {
 		if (SVController.getStaticConf().isStateTransferEnabled() && dt.getRecoverer() != null) {
 			StandardSMMessage stdMsg = (StandardSMMessage)msg;
 			boolean sendState = stdMsg.getReplica() == SVController.getStaticConf().getProcessId();
-//			logger.info("Received ST request from replica " + stdMsg.getSender() + " to eid " + stdMsg.getEid() + ", sendstate: " + sendState);
-			Printer.println("Received ST request from replica " + stdMsg.getSender() + " to eid " + stdMsg.getEid() + ", sendstate: " + sendState, "azul");
-			ApplicationState thisState = dt.getRecoverer().getState(msg.getEid(), sendState);
+			logger.info("Received ST request from replica " + stdMsg.getSender() + " to eid " + stdMsg.getCID() + ", sendstate: " + sendState);
+			ApplicationState thisState = dt.getRecoverer().getState(msg.getCID(), sendState);
 			if (thisState == null) {
 				thisState = dt.getRecoverer().getState(-1, sendState);
 			}
 			int[] targets = { msg.getSender() };
 			SMMessage smsg = new StandardSMMessage(SVController.getStaticConf().getProcessId(),
-					msg.getEid(), TOMUtil.SM_REPLY, -1, thisState, SVController.getCurrentView(), lcManager.getLastReg(), tomLayer.lm.getCurrentLeader());
-			Printer.println("Sending state", "blue");
+					msg.getCID(), TOMUtil.SM_REPLY, -1, thisState, SVController.getCurrentView(), tomLayer.getSynchronizer().getLCManager().getLastReg(), tomLayer.execManager.getCurrentLeader());
+			logger.info("Sending state");
 			tomLayer.getCommunication().send(targets, smsg);
-			Printer.println("Sent", "blue");
+			logger.info("Sent");
 		}
 	}
 
@@ -146,7 +142,7 @@ public class DatabaseStateManager extends BaseStateManager {
 	public void SMReplyDeliver(SMMessage msg, boolean isBFT) {
 		lockTimer.lock();
 		if (SVController.getStaticConf().isStateTransferEnabled()) {
-			if (waitingEid != -1 && msg.getEid() == waitingEid) {
+			if (waitingCID != -1 && msg.getCID() == waitingCID) {
 				int currentRegency = -1;
 				int currentLeader = -1;
 				View currentView = null;
@@ -155,14 +151,14 @@ public class DatabaseStateManager extends BaseStateManager {
 					senderRegencies.put(msg.getSender(), msg.getRegency());
 					senderLeaders.put(msg.getSender(), msg.getLeader());
 					senderViews.put(msg.getSender(), msg.getView());
-					if (moreThan2F_Regencies(msg.getRegency())) currentRegency = msg.getRegency();
-					if (moreThan2F_Leaders(msg.getLeader())) currentLeader = msg.getLeader();
-					if (moreThan2F_Views(msg.getView())) {
+					if (enoughRegencies(msg.getRegency())) currentRegency = msg.getRegency();
+					if (enoughLeaders(msg.getLeader())) currentLeader = msg.getLeader();
+					if (enoughViews(msg.getView())) {
 						currentView = msg.getView();
 					}
 				} else {
-					currentLeader = tomLayer.lm.getCurrentLeader();
-					currentRegency = lcManager.getLastReg();
+					currentLeader = tomLayer.execManager.getCurrentLeader();
+					currentRegency = tomLayer.getSynchronizer().getLCManager().getLastReg();
 					currentView = SVController.getCurrentView();
 				}
 
@@ -175,7 +171,7 @@ public class DatabaseStateManager extends BaseStateManager {
 				senderStates.put(msg.getSender(), msg.getState());
 
 				System.out.println("Verifying more than F replies");
-				if (moreThanF_Replies()) {
+				if (enoughReplies()) {
 					System.out.println("More than F confirmed");
 					ApplicationState otherReplicaState = getOtherReplicaState();
 					System.out.println("State != null: " + (state != null) + ", recvState != null: " + (otherReplicaState != null));
@@ -205,19 +201,19 @@ public class DatabaseStateManager extends BaseStateManager {
 
 						System.out.println("Received state. Will install it");
 
-						lcManager.setLastReg(currentRegency);
-						lcManager.setNextReg(currentRegency);
-						lcManager.setNewLeader(currentLeader);
-						tomLayer.lm.setNewLeader(currentLeader);
+						tomLayer.getSynchronizer().getLCManager().setLastReg(currentRegency);
+						tomLayer.getSynchronizer().getLCManager().setNextReg(currentRegency);
+						tomLayer.getSynchronizer().getLCManager().setNewLeader(currentLeader);
+						tomLayer.execManager.setNewLeader(currentLeader);
 
 						dt.deliverLock();
-						waitingEid = -1;
+						waitingCID = -1;
 						dt.update(state);
 
 						if (!appStateOnly && execManager.stopped()) {
-							Queue<PaxosMessage> stoppedMsgs = execManager.getStoppedMsgs();
-							for (PaxosMessage stopped : stoppedMsgs) {
-								if (stopped.getNumber() > state.getLastEid() /*msg.getEid()*/)
+							Queue<ConsensusMessage> stoppedMsgs = execManager.getStoppedMsgs();
+							for (ConsensusMessage stopped : stoppedMsgs) {
+								if (stopped.getNumber() > state.getLastCID() /*msg.getEid()*/)
 									execManager.addOutOfContextMessage(stopped);
 							}
 							execManager.clearStopped();
@@ -237,7 +233,7 @@ public class DatabaseStateManager extends BaseStateManager {
 
 						reset();
 
-						Printer.println("I updated the state!", "azul");
+						logger.info("I updated the state!");
 
 						tomLayer.requestsTimer.Enabled(true);
 						tomLayer.requestsTimer.startTimer();
@@ -245,10 +241,10 @@ public class DatabaseStateManager extends BaseStateManager {
 
 						if (appStateOnly) {
 							appStateOnly = false;
-							tomLayer.resumeLC();
+							tomLayer.getSynchronizer().resumeLC();
 						}
 					} else if (otherReplicaState == null && (SVController.getCurrentViewN() / 2) < getReplies()) {
-						waitingEid = -1;
+						waitingCID = -1;
 						reset();
 
 						if (stateTimer != null) stateTimer.cancel();
