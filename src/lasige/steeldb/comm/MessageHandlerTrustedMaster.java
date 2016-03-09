@@ -11,7 +11,7 @@ import lasige.steeldb.client.SteelDBListener;
 import lasige.steeldb.jdbc.BFTRowSet;
 import lasige.steeldb.jdbc.ResultSetData;
 
-import bftsmart.tom.ServiceProxy;
+import bftsmart.tom.AsynchServiceProxy;
 import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.util.Extractor;
@@ -19,7 +19,7 @@ import bftsmart.tom.util.TOMUtil;
 
 public class MessageHandlerTrustedMaster {
 
-	private ServiceProxy proxy;
+	private AsynchServiceProxy proxy;
 	private boolean transactionReadOnly;
 	private LinkedList<byte[]> resHashes;
 	private LinkedList<Message> operations;
@@ -33,7 +33,8 @@ public class MessageHandlerTrustedMaster {
 	
 	public MessageHandlerTrustedMaster(int clientId) {
 		clientId = FIRST_CLIENT_ID + clientId;
-		proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
+		//proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code of smart
+                proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
 		transactionReadOnly = true;
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
@@ -43,7 +44,8 @@ public class MessageHandlerTrustedMaster {
 	}
 	
 	public MessageHandlerTrustedMaster(int clientId, boolean replica) {
-		proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
+		//proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code of smart
+                proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
 		transactionReadOnly = true;
 		this.clientId = clientId;
 		master = 0;
@@ -104,14 +106,18 @@ public class MessageHandlerTrustedMaster {
 				int[] processes = new int[] {master};
 				SteelDBListener steelListener = new SteelDBListener(m.getBytes(), new BFTComparator(), new BFTExtractor(), master);
 				try {
-					proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST);
+					//proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST); // old code of smart
+                                        
+                                    proxy.invokeAsynchRequest(m.getBytes(), processes, steelListener, TOMMessageType.UNORDERED_REQUEST);
 				} catch(Exception ex) {
 					logger.error("The master replica is not reacheable", ex);
 				}
 				TOMMessage message = steelListener.getResponse(); 
 //					logger.debug("Message:" + message);
 				if(message != null) { 
-					response = message.getContent();
+                                        
+                                    proxy.cleanAsynchRequest(message.getSequence());
+                                    response = message.getContent();
 				} else { // the master didn't reply on time. Will invoke a master change
 					logger.info("client " + clientId + " invoking master change");
 					if(operations.size() == 0)
