@@ -7,8 +7,6 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Properties;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import lasige.steeldb.comm.Message;
 import lasige.steeldb.comm.OpcodeList;
@@ -23,17 +21,17 @@ import bftsmart.statemanagement.StateManager;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
 import bftsmart.tom.ServiceReplica;
-import bftsmart.tom.server.defaultservices.DefaultSingleRecoverable;
+import bftsmart.tom.server.defaultservices.DefaultRecoverable;
 import bftsmart.tom.util.TOMUtil;
-import bftsmart.util.Printer;
 
 import org.apache.log4j.Logger;
 import org.h2.tools.RunScript;
 import org.h2.tools.Script;
 
-public class Replica extends DefaultSingleRecoverable {
+public class Replica extends DefaultRecoverable {
 
 	private int id;
+        private ServiceReplica replica;
 	private MessageProcessor mProcessor = null;
 	private ConnectionParams connParams = null;
 	private ReplicaContext replicaContext;
@@ -45,18 +43,33 @@ public class Replica extends DefaultSingleRecoverable {
     int count = 0;
     
     public Replica(int id, Properties config) {
-		new ServiceReplica(id,this,this);
-		this.id = id;
+        
+		super();
 		connParams = new ConnectionParams(config);
 		mProcessor = new MessageProcessor(id, connParams.getDriver(), connParams.getUrl());
-		View view = replicaContext.getCurrentView();
+                this.id = id;
+		replica = new ServiceReplica(id,this,this);                
+                View view = replicaContext.getCurrentView();
 		mProcessor.setCurrentView(view);
-		initLog();
 		logger.info("Replica started");
 	}
         
-	@Override
-	public synchronized byte[] appExecuteOrdered(byte[] command, MessageContext msgCtx) {
+        @Override
+        public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs) {
+
+
+            byte [][] replies = new byte[commands.length][];
+            for (int i = 0; i < commands.length; i++) {
+                if(msgCtxs != null && msgCtxs[i] != null) {
+                replies[i] = executeSingle(commands[i],msgCtxs[i]);
+                }
+                else executeSingle(commands[i],null);
+            }
+
+            return replies;
+        }
+                
+	private synchronized byte[] executeSingle(byte[] command, MessageContext msgCtx) {
 		byte [] reply = null;
 		
 		Message m = Message.getMessage(command);
@@ -121,7 +134,7 @@ public class Replica extends DefaultSingleRecoverable {
 	}
 
 	@Override
-	public synchronized byte[] executeUnordered(byte[] command, MessageContext msgCtx) {
+	public synchronized byte[] appExecuteUnordered(byte[] command, MessageContext msgCtx) {
 		byte[] replyBytes = null;
 		Message reply = null;
 		Message m = Message.getMessage(command);
