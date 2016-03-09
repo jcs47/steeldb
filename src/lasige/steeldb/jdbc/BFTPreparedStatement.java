@@ -520,8 +520,12 @@ public class BFTPreparedStatement implements PreparedStatement{
 	}
 
 	@Override
-	public boolean execute() throws SQLException {
-		throw new UnsupportedOperationException();
+       public boolean execute() throws SQLException {
+            	//throw new UnsupportedOperationException();
+		Object result = (Object)process(OpcodeList.EXECUTE);
+		current = template;
+		parameters.clear();
+		return (result instanceof ResultSet);
 	}
 
 	@Override
