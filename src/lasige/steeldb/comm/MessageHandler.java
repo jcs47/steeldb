@@ -11,7 +11,7 @@ import lasige.steeldb.client.SteelDBListener;
 import lasige.steeldb.jdbc.BFTRowSet;
 import lasige.steeldb.jdbc.ResultSetData;
 
-import bftsmart.tom.ServiceProxy;
+import bftsmart.tom.AsynchServiceProxy;
 import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.util.Extractor;
@@ -19,12 +19,12 @@ import bftsmart.tom.util.TOMUtil;
 
 public class MessageHandler {
 
-	private ServiceProxy proxy;
+	private AsynchServiceProxy proxy;
 	private boolean transactionReadOnly;
 	private LinkedList<byte[]> resHashes;
 	private LinkedList<Message> operations;
 	private static final String CONFIG_FOLDER = System.getProperty("divdb.folder", "config");
-	private static final int FIRST_CLIENT_ID = Integer.valueOf(System.getProperty("divdb.firstclient", "0"));
+	private static final int FIRST_CLIENT_ID = Integer.valueOf(System.getProperty("divdb.firstclient", "1000"));
 	private final int clientId;
 	private int master;
 	private int oldMaster;
@@ -33,7 +33,8 @@ public class MessageHandler {
 	
 	public MessageHandler(int clientId) {
 		clientId = FIRST_CLIENT_ID + clientId;
-		proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
+                //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
+                proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
 		transactionReadOnly = true;
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
@@ -43,7 +44,8 @@ public class MessageHandler {
 	}
 	
 	public MessageHandler(int clientId, boolean replica) {
-		proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
+                //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
+                proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
 		transactionReadOnly = true;
 		this.clientId = clientId;
 		master = 0;
@@ -65,14 +67,15 @@ public class MessageHandler {
 	 * @return The message with the results from the execution in the replicas compared
 	 * to garantee that the replicas are correct.
 	 */
-	public synchronized Message send(Message m, boolean autoCommit) {
-		try {
+	public synchronized Message send(Message m, boolean autoCommit) {            
+                try {
 			m.setClientId(clientId);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 		int opCode = m.getOpcode();
 		logger.debug("---- Client " + clientId + ", OpCode: " + m.getOpcode() + ", Msg: " + m.getContents());
+                if (m.getContents() instanceof String) logger.debug("---- Invoking query: '" + ((String) m.getContents()) + "'");
 //		logger.debug("---- Autocommit  " + autoCommit + ". Client id: " + proxy.getProcessId());
 		byte[] response = null;
 		
@@ -106,13 +109,17 @@ public class MessageHandler {
 					int[] processes = new int[] {master};
 					SteelDBListener steelListener = new SteelDBListener(m.getBytes(), new BFTComparator(), new BFTExtractor(), master);
 					try {
-						proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST);
+						//proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST); // old code of smart
+                                                
+                                            proxy.invokeAsynchRequest(m.getBytes(), processes, steelListener, TOMMessageType.UNORDERED_REQUEST);
 					} catch(Exception ex) {
 						logger.error("The master replica is not reacheable", ex);
 					}
 					TOMMessage message = steelListener.getResponse(); 
 //						logger.debug("Message:" + message);
 					if(message != null) { 
+                                            
+                                                proxy.cleanAsynchRequest(message.getSequence());
 						response = message.getContent();
 					} else { // the master didn't reply on time. Will invoke a master change
 						logger.info("client " + clientId + " invoking master change");
@@ -143,9 +150,9 @@ public class MessageHandler {
 		Message reply = Message.getMessage(response);
 		if(reply != null) {
 			master = reply.getMaster();
-			logger.debug("Reply opcode: " + m.getOpcode() + ", content: "  + reply.getContents());
+                        logger.debug("Reply opcode: " + m.getOpcode() + ", content: "  + reply.getContents());
 		} else {
-			logger.info("reply is null. " + m.getClientId() + ", opt: " + opCode + ", contents: " + m.getContents());
+                        logger.info("reply is null. " + m.getClientId() + ", opt: " + opCode + ", contents: " + m.getContents());
 		}
 		
 		Object replyContent = reply.getContents();
@@ -154,7 +161,7 @@ public class MessageHandler {
 			try {
 				BFTRowSet bftrs = new BFTRowSet();
 				bftrs.populate(rsd);
-				reply = new Message(reply.getOpcode(), bftrs, reply.isUnordered(), reply.getMaster(), reply.getStatementOption());
+				reply = new Message(reply.getOpcode(), bftrs, reply.isUnordered(), reply.getMaster(), reply.getStatementOption());                                
 			} catch (SQLException e) {
 				logger.error("Error populating BFTRowSet", e);
 			}
@@ -228,11 +235,11 @@ public class MessageHandler {
 
 	static class BFTExtractor implements Extractor {
 		@Override
-		public TOMMessage extractResponse(TOMMessage[] replies, int sameContent, int lastReceived) {
-			TOMMessage reply = replies[lastReceived];
-			if(reply == null)
-				System.out.println("MessageHandler.extractresponse(): reply at position " + lastReceived + " is null");
-			return reply;
+		public TOMMessage extractResponse(TOMMessage[] replies, int sameContent, int lastReceived) {                    
+                    TOMMessage reply = replies[lastReceived];                    
+                    if(reply == null)
+                    	System.out.println("MessageHandler.extractresponse(): reply at position " + lastReceived + " is null");
+                    return reply;
 
 		}
 	}
