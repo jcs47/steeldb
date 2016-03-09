@@ -9,6 +9,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.log4j.Logger;
 
 import bftsmart.communication.client.ReplyListener;
+import bftsmart.tom.RequestContext;
 import bftsmart.tom.core.messages.TOMMessage;
 
 public class StateRequestListener implements ReplyListener {
@@ -48,13 +49,14 @@ public class StateRequestListener implements ReplyListener {
         logger.debug("Response extracted = " + response);
        	return response;
     }
-	
-	public void replyReceived(TOMMessage reply) {
+	//public void replyReceived(TOMMessage reply) { // code of old smart
+	public void replyReceived(RequestContext rc, TOMMessage tomm) {
         canReceiveLock.lock();
-        logger.debug("Receiving reply from " + reply.getSender() + ". Expected sender replica: " + stateReplica);
-		replies.add(reply);
+        
+        logger.debug("Receiving reply from " + tomm.getSender() + ". Expected sender replica: " + stateReplica);
+		replies.add(tomm);
     	receivedReplies++;
-    	if(reply.getSender() == stateReplica)
+    	if(tomm.getSender() == stateReplica)
     		expectedReplied = true;
     	
         if(receivedReplies >= 2 && expectedReplied) {

@@ -1,6 +1,5 @@
 package lasige.steeldb.client;
 
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
@@ -11,6 +10,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.log4j.Logger;
 
 import bftsmart.communication.client.ReplyListener;
+import bftsmart.tom.RequestContext;
 import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.util.Extractor;
 
@@ -58,15 +58,16 @@ public class SteelDBListener implements ReplyListener {
 		return response;
 	}
 
-	public void replyReceived(TOMMessage reply) {
-		if(hasResult)
+        //public void replyReceived(TOMMessage reply) { // code of old smart
+	public void replyReceived(RequestContext rc, TOMMessage tomm) {
+            if(hasResult)
 			return;
 //		logger.debug("waiting for canREceiveLock");
 		canReceiveLock.lock();
 //		logger.debug("canReceive lock granted");
 //		logger.debug("Receiving reply from " + reply.getSender() + " with reqId:" + reply.getSequence());
-		if(reply.getSender() == master) {
-			response = reply;
+		if(tomm.getSender() == master) {
+                    response = tomm;
 		}
 //		logger.debug("response:" + response);
 		hasResult = true;
