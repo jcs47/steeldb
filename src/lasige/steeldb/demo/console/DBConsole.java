@@ -9,16 +9,17 @@ import java.util.Scanner;
 
 public class DBConsole {
 	
-	private static String connectionURL = "jdbc:bftdriver;smartlighting0;smartlighting1;smartlighting2;smartlighting3";
-	private static String username = "sl;sl;sl;sl";
-	private static String password = "sl;sl;sl;sl";
+	private static final String connectionURL = "jdbc:bftdriver;booktown0;booktown1;booktown2;booktown3";
+	private static final String username = "postgres;postgres;postgres;postgres";
+	private static final String password = "rammstein;rammstein;rammstein;rammstein";
 
-	public static void main(String[] args) {
+        public static void main(String[] args) {
 		try {
 			Class.forName("lasige.steeldb.jdbc.BFTDriver");
 			Connection conn = DriverManager.getConnection(connectionURL, username, password);
 			conn.setAutoCommit(false);
 			Scanner in = new Scanner(System.in);
+                        System.out.println("Connect. Type your commands. \n\n");
 			String line = in.nextLine();
 			while(!(line.equalsIgnoreCase("exit"))) {
 				if(line.toLowerCase().startsWith("select")) {
@@ -29,7 +30,7 @@ public class DBConsole {
 						count++;
 					}
 					System.out.println("Query executed. Results: " + count);
-				} else if(line.toLowerCase().startsWith("update")) {
+				} else if(line.toLowerCase().startsWith("update") || line.toLowerCase().startsWith("insert")) {
 					PreparedStatement pst = conn.prepareStatement(line);
 					int affectedRows = pst.executeUpdate();
 					System.out.println("Update executed. Affected rows: " + affectedRows);
