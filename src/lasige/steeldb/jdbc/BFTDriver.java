@@ -68,7 +68,7 @@ public class BFTDriver implements java.sql.Driver {
 		//create mHandler
 		MessageHandler mHandler =  new MessageHandler(clientId.incrementAndGet());
 		//do the login proccess
-		Message login = new Message(OpcodeList.LOGIN_SEND, lr, false);
+		Message login = new Message(OpcodeList.LOGIN_SEND, lr, false, 0);
 		Message reply = mHandler.send(login, true);
 		if(reply.getOpcode() != OpcodeList.LOGIN_OK)
 			throw new SQLException("Error establishing connection:"

@@ -82,7 +82,7 @@ public class Replica extends DefaultRecoverable {
 			SMMessage smmsg = (SMMessage)m.getContents();
 			if(smmsg.getSender() != id)
 				stateManager.SMRequestDeliver(smmsg, true);
-			replyMsg = new Message(OpcodeList.STATE_REQUESTED, null, false);
+			replyMsg = new Message(OpcodeList.STATE_REQUESTED, null, false, mProcessor.getMaster());
 			break;
 		case OpcodeList.EXECUTE:
 			replyMsg = mProcessor.processExecute(m, m.getClientId());

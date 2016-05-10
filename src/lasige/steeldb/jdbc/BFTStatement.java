@@ -28,7 +28,7 @@ public class BFTStatement implements java.sql.Statement {
 
     @Override
     public boolean execute(String sql) throws SQLException {
-    	Message m = new Message(OpcodeList.EXECUTE, sql, true);
+    	Message m = new Message(OpcodeList.EXECUTE, sql, true, mHandler.getMaster());
 		Message reply = mHandler.send(m, this.getConnection().getAutoCommit());
 		if(reply.getOpcode() == OpcodeList.EXECUTE_ERROR)
 			throw new SQLException("Error executing sql");
@@ -43,7 +43,7 @@ public class BFTStatement implements java.sql.Statement {
 
 	@Override
     public ResultSet executeQuery(String query) throws SQLException {
-		Message m = new Message(OpcodeList.EXECUTE_QUERY, query, true);
+		Message m = new Message(OpcodeList.EXECUTE_QUERY, query, true, mHandler.getMaster());
 		Message reply = null;
 		if(this.getConnection().getAutoCommit())
 			reply = mHandler.send(m, true);
@@ -55,7 +55,7 @@ public class BFTStatement implements java.sql.Statement {
 
     @Override
     public int executeUpdate(String query) throws SQLException {
-		Message m = new Message(OpcodeList.EXECUTE_QUERY, query, true);
+		Message m = new Message(OpcodeList.EXECUTE_QUERY, query, true, mHandler.getMaster());
 		Message reply = null;
 		if(this.getConnection().getAutoCommit())
 			reply = mHandler.send(m, false);
