@@ -3,6 +3,7 @@ package lasige.steeldb.Replica;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.LinkedList;
@@ -124,6 +125,14 @@ public class ConnManager {
 		return conn.createStatement();
 	}
 	
+        protected Statement createStatement(int resultSetType,
+                                 int resultSetConcurrency)
+                                   throws SQLException {
+            
+            return conn.createStatement(resultSetType, resultSetConcurrency);
+            
+        }
+        
 	protected DatabaseMetaData getMetaData() throws SQLException {
 		logger.debug("conn is not null " +  (conn != null));
 //		try {

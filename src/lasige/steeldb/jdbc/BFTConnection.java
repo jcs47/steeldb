@@ -268,7 +268,7 @@ public class BFTConnection implements Connection {
 	public PreparedStatement prepareStatement(String sql,
                             int resultSetType, int resultSetConcurrency)
 	throws SQLException {
-		throw new UnsupportedOperationException();
+		return new BFTPreparedStatement(this, mHandler, sql, resultSetType, resultSetConcurrency);
 	}
 
 	@Override
