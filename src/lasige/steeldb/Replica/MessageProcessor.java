@@ -142,7 +142,7 @@ public class MessageProcessor {
                         logger.debug("---- Result EXECUTE QUERY: " + rsd);
                         logger.debug("---- rsd.metadata hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getMetadata()))) + ", rsd.getRows hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getRows()))));
                         reply = new Message(OpcodeList.EXECUTE_QUERY_OK, rsd, true, master, m.getResultSetType(), m.getResultSetConcurrency());
-                        System.out.println("Message: " + m.toString());
+                        System.out.println("Reply: " + m.toString());
                         //reply.setRowset(rowset);
                     } else {
                         s = connManager.createStatement();
