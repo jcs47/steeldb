@@ -14,7 +14,6 @@ import org.apache.log4j.Logger;
 
 import bftsmart.reconfiguration.views.View;
 import bftsmart.tom.util.TOMUtil;
-import java.sql.PreparedStatement;
 //import bftsmart.util.Printer;
 
 import lasige.steeldb.Replica.normalizaton.FirebirdNormalizer;
@@ -57,7 +56,7 @@ public class MessageProcessor {
 		Statement s;
 		Message reply = null;
 		if(connManager.isAborted()) {
-			return new Message(OpcodeList.ABORTED, null, false, master);
+			return new Message(OpcodeList.ABORTED, new SQLException("Connection aborted"), false, master);
 		}
 		int content = 0;
 		//normalize statement
@@ -82,7 +81,7 @@ public class MessageProcessor {
 		Message reply = null;
 		ConnManager connManager = sm.getConnManager(clientId);
 		if(connManager.isAborted()) {
-			return new Message(OpcodeList.ABORTED, null, false, master);
+			return new Message(OpcodeList.ABORTED, new SQLException("Connection aborted"), false, master);
 		}
 		@SuppressWarnings("unchecked")
 		LinkedList<String> batch = (LinkedList<String>) m.getContents();
@@ -111,7 +110,7 @@ public class MessageProcessor {
 		Message reply = null;
 		ConnManager connManager = sm.getConnManager(clientId);
 		if(connManager.isAborted()) {
-			return new Message(OpcodeList.ABORTED, null, false, master);
+			return new Message(OpcodeList.ABORTED, new SQLException("Connection aborted"), false, master);
 		}
 		String sql = (String)m.getContents();
 		logger.debug("---- Client: " + clientId + ". QUERY: " + sql);
@@ -136,13 +135,13 @@ public class MessageProcessor {
                         // Disabled these options because of performance issues
                         s = connManager.createStatement(m.getResultSetType(), m.getResultSetConcurrency());
                         //s = connManager.createStatement();
-                        System.out.println("Query: " + sql);
+                        logger.debug("---- Query: " + sql);
                         ResultSet rs = s.executeQuery(sql);
                         ResultSetData rsd = new ResultSetData(rs);
                         logger.debug("---- Result EXECUTE QUERY: " + rsd);
                         logger.debug("---- rsd.metadata hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getMetadata()))) + ", rsd.getRows hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getRows()))));
                         reply = new Message(OpcodeList.EXECUTE_QUERY_OK, rsd, true, master, m.getResultSetType(), m.getResultSetConcurrency());
-                        System.out.println("Reply: " + m.toString());
+                        logger.debug("---- Reply: " + reply.toString());
                         //reply.setRowset(rowset);
                     } else {
                         s = connManager.createStatement();
@@ -166,7 +165,7 @@ public class MessageProcessor {
 		ConnManager connManager = sm.getConnManager(clientId);
 		
 		if(connManager.isAborted()) {
-			return new Message(OpcodeList.ABORTED, null, false, master);
+			return new Message(OpcodeList.ABORTED, new SQLException("Connection aborted"), false, master);
 		}
 
 		Message reply = null;
@@ -212,7 +211,8 @@ public class MessageProcessor {
 //			sqle.printStackTrace();
 			reply = new Message(OpcodeList.EXECUTE_UPDATE_ERROR, null, false, master);
 		}
-		
+                
+		logger.debug("---- Reply: " + reply.toString());
 		return reply;
 	}
 
@@ -326,7 +326,7 @@ public class MessageProcessor {
 					reply = processExecuteUpdate(msg, clientId);
 					break;
 				default:
-					reply = new Message(OpcodeList.COMMIT_ERROR, null, false, master);
+					reply = new Message(OpcodeList.COMMIT_ERROR, new SQLException("Unknown op: " + msg.getOpcode()), false, master);
 				}
 				Object replyContent = reply.getContents();
 				byte[] replyBytes = null;
@@ -336,7 +336,7 @@ public class MessageProcessor {
 			}
 			if(!compareHashes(resHashes, results)){
 				logger.debug("## Results hashes don't match ##. Results.size(): " + results.size() + ", resHashes.size(): " + resHashes.size() + ", ops.size()" + operations.size());
-				reply = new Message(opcodeError, null, true, master);
+				reply = new Message(opcodeError, new SQLException("Results hashes don't match"), true, master);
 			} else {
 				logger.debug("### Results hashes matches. Results.size(): " + results.size());
 				reply = new Message(opcodeOK, null, false, master);
@@ -372,7 +372,7 @@ public class MessageProcessor {
 				} catch (SQLException sqle) {
 					logger.error("processRollback() error", sqle);
 //					sqle.printStackTrace();
-					reply = new Message(OpcodeList.ROLLBACK_ERROR, null, false, master);
+					reply = new Message(OpcodeList.ROLLBACK_ERROR, sqle, false, master);
 					return reply;
 				}
 			} else {
@@ -395,7 +395,7 @@ public class MessageProcessor {
 				} catch (SQLException sqle) {
 					logger.error("processRollback() error", sqle);
 //					sqle.printStackTrace();
-					reply = new Message(OpcodeList.ROLLBACK_ERROR, null, true, master);
+					reply = new Message(OpcodeList.ROLLBACK_ERROR, sqle, true, master);
 				}
 			}
 		}

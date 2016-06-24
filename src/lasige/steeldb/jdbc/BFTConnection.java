@@ -67,7 +67,10 @@ public class BFTConnection implements Connection {
 		Message rollback = new Message(OpcodeList.ROLLBACK_SEND, null, false, mHandler.getMaster()); //readonly?
 		Message reply = mHandler.send(rollback, false);
 		if(reply.getOpcode() == OpcodeList.ROLLBACK_ERROR)
+                    if ((reply.getContents() == null) || !(reply.getContents() instanceof SQLException))
 			throw new SQLException("Error during rollback");
+                else
+                        throw (SQLException) reply.getContents();
 	}
 
 	@Override
@@ -77,12 +80,18 @@ public class BFTConnection implements Connection {
 		Message reply = mHandler.send(commit, false);
 		
 		if(reply.getOpcode() == OpcodeList.COMMIT_ERROR) {
+                     if ((reply.getContents() == null) || !(reply.getContents() instanceof SQLException))
 			throw new SQLException("Commit Error");
-		} else if(reply.getOpcode() == OpcodeList.TIMEOUT) {
+                    else
+                        throw (SQLException) reply.getContents();
+                } else if(reply.getOpcode() == OpcodeList.TIMEOUT) {
 			throw new SQLException("Timeout during commit");
 		} else if(reply.getOpcode() == OpcodeList.ABORTED) {
-			throw new SQLException("Transaction aborted");
-		}
+                     if ((reply.getContents() == null) || !(reply.getContents() instanceof SQLException))
+                        throw new SQLException("Transaction aborted");
+                    else
+                        throw (SQLException) reply.getContents();
+                }
 
 	}
 	
