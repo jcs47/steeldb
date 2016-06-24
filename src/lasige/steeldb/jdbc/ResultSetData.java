@@ -202,7 +202,7 @@ public class ResultSetData implements Serializable {
 		if (rows == null) {
 			if (other.rows != null)
 				return false;
-		} else if (!rows.equals(other.rows))
+		} else if (rows.size() != other.rows.size() || !rows.containsAll(other.rows))
 			return false;
 		return true;
 	}
@@ -214,14 +214,17 @@ public class ResultSetData implements Serializable {
 			for(ArrayList<Object> row : rows) {
 				sb.append("[row:");
 				for(Object col : row) {
-					sb.append(col).append(",");
+					sb.append(col).append(";");
 				}
-				sb.append("], [");
+				sb.append("]\n");
 			}
 		}
-		sb.append("metadata: ");
-		
-		int colCount;
+                else {
+                    sb.append("[empty]");
+                }
+//		sb.append("metadata: ");
+//		
+//		int colCount;
 //		try {
 //			colCount = metadata.getColumnCount();
 //			sb.append("colcount:").append(colCount).append(",");
@@ -250,7 +253,7 @@ public class ResultSetData implements Serializable {
 //		} catch (SQLException e) {
 //			logger.error("error iterating over metadata", e);
 //		}
-		sb.append("]");
+//		sb.append("]");
 		return sb.toString();
 	}
 
