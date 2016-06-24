@@ -20,11 +20,14 @@
 			<param name="ConversionPattern" value="%-5p - %d{yyyy/MM/dd HH:mm:ss} %-5c %C: %m\n" />
 		</layout>
 	</appender>
+	<logger name="steeldb_processor">
+		<level value="off" />
+	</logger>
 	<logger name="steeldb_client">
 		<level value="info" />
 	</logger>
 	<logger name="steeldb_replica">
-		<level value="info" />
+		<level value="off" />
 	</logger>
 	<logger name="steeldb_execution">
 		<level value="info" />
