@@ -176,7 +176,7 @@ public class MessageHandler {
 		}
 		
 		if(!transactionReadOnly) {
-			byte[] replyBytes = TOMUtil.getBytes(String.valueOf(replyContent));
+			byte[] replyBytes = TOMUtil.getBytes(replyContent);
 			byte[] replyHash = TOMUtil.computeHash(replyBytes);
 			resHashes.add(replyHash);
 		}

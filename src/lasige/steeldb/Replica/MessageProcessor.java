@@ -330,7 +330,7 @@ public class MessageProcessor {
 				}
 				Object replyContent = reply.getContents();
 				byte[] replyBytes = null;
-				replyBytes = TOMUtil.getBytes(String.valueOf(replyContent));
+				replyBytes = TOMUtil.getBytes(replyContent);
 				byte[] replyHash = TOMUtil.computeHash(replyBytes);
 				results.add(replyHash);
 			}
