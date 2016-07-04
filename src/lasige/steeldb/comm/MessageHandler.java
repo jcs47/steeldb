@@ -303,7 +303,11 @@ public class MessageHandler {
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
 	}
-
+        
+        public boolean hasOps() {
+            return operations.size() == resHashes.size() && operations.size() > 0;
+        }
+        
         public int getMaster() {
             return master;
         }

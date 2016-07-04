@@ -21,13 +21,13 @@
 		</layout>
 	</appender>
 	<logger name="steeldb_processor">
-		<level value="off" />
+		<level value="debug" />
 	</logger>
 	<logger name="steeldb_client">
-		<level value="info" />
+		<level value="off" />
 	</logger>
 	<logger name="steeldb_replica">
-		<level value="off" />
+		<level value="debug" />
 	</logger>
 	<logger name="steeldb_execution">
 		<level value="info" />
