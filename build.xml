@@ -24,6 +24,8 @@
         <pathelement location="lib/postgresql-9.1-901.jdbc4.jar"/>
         <pathelement location="lib/h2-1.3.170.jar"/>
         <pathelement location="lib/log4j-1.2.17.jar"/>
+        <pathelement location="lib/json-20141113.jar"/>
+        <pathelement location="lib/MerkleTree.jar"/>
     </path>
     <target name="init">
         <mkdir dir="bin"/>

@@ -16,11 +16,12 @@ import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.util.Extractor;
 import bftsmart.tom.util.TOMUtil;
+import merkletree.TreeCertificate;
 
 public class MessageHandler {
 
 	private AsynchServiceProxy proxy;
-	private boolean transactionReadOnly;
+	private boolean transactionReadOnly = false;
 	private LinkedList<byte[]> resHashes;
 	private LinkedList<Message> operations;
 	private static final String CONFIG_FOLDER = System.getProperty("divdb.folder", "config");
@@ -28,6 +29,11 @@ public class MessageHandler {
 	private final int clientId;
 	private int master;
 	private int oldMaster;
+        private TreeCertificate[] certs;
+        
+        public TreeCertificate[] getCertificates() {
+            return certs;
+        }
 	
     private Logger logger = Logger.getLogger("steeldb_client");
 	
@@ -35,7 +41,7 @@ public class MessageHandler {
 		clientId = FIRST_CLIENT_ID + clientId;
                 //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
                 proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
-		transactionReadOnly = true;
+		//transactionReadOnly = true;
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
 		this.clientId = clientId;
@@ -46,7 +52,7 @@ public class MessageHandler {
 	public MessageHandler(int clientId, boolean replica) {
                 //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
                 proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
-		transactionReadOnly = true;
+		//transactionReadOnly = true;
 		this.clientId = clientId;
 		master = 0;
 //		logger.debug("Opening connection for client " + proxy.getProcessId());
@@ -87,7 +93,7 @@ public class MessageHandler {
 				commitByAutoCommitChange = true;
 			if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange) {
 				m = prepareFinishTransactionRequest(opCode);
-				transactionReadOnly = true;
+				//transactionReadOnly = true;
 			}
 			response = proxy.invokeOrdered(m.getBytes());
 			if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange)
@@ -161,7 +167,7 @@ public class MessageHandler {
 		
 		Object replyContent = reply.getContents();
 		if(replyContent instanceof ResultSetData) {
-			ResultSetData rsd = (ResultSetData) replyContent;
+                        ResultSetData rsd = (ResultSetData) replyContent;
 			try {
 				BFTRowSet bftrs = new BFTRowSet();
 				bftrs.populate(rsd);
@@ -175,7 +181,7 @@ public class MessageHandler {
 			}
 		}
 		
-		if(!transactionReadOnly) {
+		if(!transactionReadOnly && (opCode == OpcodeList.EXECUTE_QUERY || opCode == OpcodeList.EXECUTE_UPDATE)) {
 			byte[] replyBytes = TOMUtil.getBytes(String.valueOf(replyContent));
 			byte[] replyHash = TOMUtil.computeHash(replyBytes);
 			resHashes.add(replyHash);
@@ -241,10 +247,21 @@ public class MessageHandler {
 		}
 	}
 
-	static class BFTExtractor implements Extractor {
+	class BFTExtractor implements Extractor {
 		@Override
-		public TOMMessage extractResponse(TOMMessage[] replies, int sameContent, int lastReceived) {                    
+		public TOMMessage extractResponse(TOMMessage[] replies, int sameContent, int lastReceived) {
                     TOMMessage reply = replies[lastReceived];                    
+                    
+                    if (Message.getMessage(reply.getContent()).getOpcode() == OpcodeList.COMMIT_OK) {   
+                        certs = new TreeCertificate[replies.length];
+                        for (int i = 0; i < replies.length; i++) {
+                            
+                            if (replies[i] != null) {
+                                Message m = Message.getMessage(replies[i].getContent());
+                                certs[i] = (TreeCertificate) m.getContents();
+                            }
+                        }
+                    }
                     if(reply == null)
                     	System.out.println("MessageHandler.extractresponse(): reply at position " + lastReceived + " is null");
                     return reply;

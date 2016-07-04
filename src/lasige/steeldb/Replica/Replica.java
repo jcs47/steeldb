@@ -51,6 +51,7 @@ public class Replica extends DefaultRecoverable {
 		replica = new ServiceReplica(id,this,this);                
                 View view = replicaContext.getCurrentView();
 		mProcessor.setCurrentView(view);
+                mProcessor.setPrivateKey(replicaContext.getStaticConfiguration().getRSAPrivateKey());
 		logger.info("Replica started");
 	}
         
@@ -103,10 +104,10 @@ public class Replica extends DefaultRecoverable {
 			replyMsg = mProcessor.processAutoCommit(m, m.getClientId());
 			break;
 		case OpcodeList.COMMIT:
-			replyMsg = mProcessor.processCommit(m, m.getClientId());
+			replyMsg = mProcessor.processCommit(m, m.getClientId(), msgCtx.getTimestamp());
 			break;
 		case OpcodeList.ROLLBACK_SEND:
-			replyMsg = mProcessor.processRollback(m, m.getClientId());
+			replyMsg = mProcessor.processRollback(m, m.getClientId(), msgCtx.getTimestamp());
 			break;
 		case OpcodeList.MASTER_CHANGE:
 			replyMsg = mProcessor.processMasterChange(m);

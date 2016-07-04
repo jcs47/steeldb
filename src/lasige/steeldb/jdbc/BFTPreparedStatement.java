@@ -31,6 +31,7 @@ import java.util.LinkedList;
 import lasige.steeldb.comm.Message;
 import lasige.steeldb.comm.MessageHandler;
 import lasige.steeldb.comm.OpcodeList;
+import merkletree.TreeCertificate;
 
 public class BFTPreparedStatement implements PreparedStatement{
 
@@ -55,6 +56,11 @@ public class BFTPreparedStatement implements PreparedStatement{
 	protected int fetchSize = -1;
 	protected int timeoutInMillis = -1;
 
+        public TreeCertificate[] getCertificates() {
+            
+            return mHandler.getCertificates();
+            
+        }
 	public BFTPreparedStatement(Connection connection, MessageHandler mHandler, String sql){
 		this.connection = connection;
 		this.mHandler = mHandler;

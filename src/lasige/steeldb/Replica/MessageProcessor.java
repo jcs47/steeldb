@@ -14,6 +14,8 @@ import org.apache.log4j.Logger;
 
 import bftsmart.reconfiguration.views.View;
 import bftsmart.tom.util.TOMUtil;
+import java.security.PrivateKey;
+import javax.crypto.Cipher;
 //import bftsmart.util.Printer;
 
 import lasige.steeldb.Replica.normalizaton.FirebirdNormalizer;
@@ -29,6 +31,9 @@ import lasige.steeldb.jdbc.BFTDatabaseMetaData;
 import lasige.steeldb.jdbc.BFTRowSet;
 import lasige.steeldb.jdbc.ResultSetData;
 import lasige.steeldb.statemanagement.DBConnectionParams;
+import merkletree.TreeCertificate;
+import org.apache.commons.lang.ArrayUtils;
+import org.json.JSONArray;
 
 public class MessageProcessor {
 	private int replicaId;
@@ -38,6 +43,8 @@ public class MessageProcessor {
 	private View currentView;
 	private long lastMasterChange;
 	private boolean installingState;
+        
+        private LinkedList<byte[]> roots;
 	
     private static Logger logger = Logger.getLogger("steeldb_processor");
 
@@ -47,6 +54,7 @@ public class MessageProcessor {
 		this.sm = new SessionManager(url);
 		this.master = 0;
 		installingState = false;
+                roots = new LinkedList();
 	}
 	
 	protected Message processExecute(Message m, int clientId) {
@@ -138,6 +146,8 @@ public class MessageProcessor {
                         logger.debug("---- Query: " + sql);
                         ResultSet rs = s.executeQuery(sql);
                         ResultSetData rsd = new ResultSetData(rs);
+                        byte[] encRoot = rsd.getMerkleTree().digest();;
+                        roots.add(encRoot);
                         logger.debug("---- Result EXECUTE QUERY: " + rsd);
                         logger.debug("---- rsd.metadata hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getMetadata()))) + ", rsd.getRows hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getRows()))));
                         reply = new Message(OpcodeList.EXECUTE_QUERY_OK, rsd, true, master, m.getResultSetType(), m.getResultSetConcurrency());
@@ -145,8 +155,11 @@ public class MessageProcessor {
                         //reply.setRowset(rowset);
                     } else {
                         s = connManager.createStatement();
+                        logger.debug("---- Query: " + sql);
                         ResultSet rs = s.executeQuery(sql);
                         ResultSetData rsd = new ResultSetData(rs);
+                        byte[] encRoot = rsd.getMerkleTree().digest();
+                        roots.add(encRoot);
                         logger.debug("---- Result EXECUTE QUERY: " + rsd);
                         logger.debug("---- rsd.metadata hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getMetadata()))) + ", rsd.getRows hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getRows()))));
                         reply = new Message(OpcodeList.EXECUTE_QUERY_OK, rsd, true, master);
@@ -253,14 +266,14 @@ public class MessageProcessor {
 		}
 	}
 
-	protected Message processCommit(Message m, int clientId) {
+	protected Message processCommit(Message m, int clientId, long timestamp) {
 //		Printer.println("Transaction commit. Client " + clientId, "vermelho");
 		FinishTransactionRequest finishReq = (FinishTransactionRequest) m.getContents();
 		LinkedList<byte[]> resHashes = finishReq.getResHashes();
 		LinkedList<Message> operations = finishReq.getOperations();
 		Message reply = null;
 		if(operations != null && operations.size() > 0) {
-			reply = processFinishTransaction(m, clientId, OpcodeList.COMMIT);
+			reply = processFinishTransaction(m, clientId, OpcodeList.COMMIT, timestamp);
 		}
 		if(reply == null || reply.getOpcode() == OpcodeList.COMMIT_OK){
 			try {
@@ -290,7 +303,7 @@ public class MessageProcessor {
 	 * @param opcode Commit or rollback.
 	 * @return Success or error on commit or rollback.
 	 */
-	private Message processFinishTransaction(Message m, int clientId, int opcode) {
+	private Message processFinishTransaction(Message m, int clientId, int opcode, long timestamp) {
 		logger.debug("--- Entering processFinishTransaction(). Client: " + clientId);
 		ConnManager connManager = sm.getConnManager(clientId);
 		Message reply = null;
@@ -334,17 +347,47 @@ public class MessageProcessor {
 				byte[] replyHash = TOMUtil.computeHash(replyBytes);
 				results.add(replyHash);
 			}
+                        reply = null;
 			if(!compareHashes(resHashes, results)){
 				logger.debug("## Results hashes don't match ##. Results.size(): " + results.size() + ", resHashes.size(): " + resHashes.size() + ", ops.size()" + operations.size());
 				reply = new Message(opcodeError, new SQLException("Results hashes don't match"), true, master);
 			} else {
 				logger.debug("### Results hashes matches. Results.size(): " + results.size());
-				reply = new Message(opcodeOK, null, false, master);
+				//reply = new Message(opcodeOK, null, false, master);
 			}
 		} else {
-			reply = new Message(opcodeOK, null, false, master);
+			//reply = new Message(opcodeOK, null, false, master);
 		}
 		logger.debug("--- Exiting processFinishTransaction()");
+                
+                if (reply == null) {
+                    
+                    logger.debug("--- Creating Certificate");
+                    byte[] buffer = new byte[] {
+                        (byte)(replicaId >>> 24),
+                        (byte)(replicaId >>> 16),
+                        (byte)(replicaId >>> 8),
+                        (byte)replicaId,
+                        (byte)(timestamp >>> 56),
+                        (byte)(timestamp >>> 48),
+                        (byte)(timestamp >>> 40),
+                        (byte)(timestamp >>> 32),
+                        (byte)(timestamp >>> 24),
+                        (byte)(timestamp >>> 16),
+                        (byte)(timestamp >>> 8),
+                        (byte)timestamp};
+                    
+                    byte[][] array = new byte[roots.size()][];
+                    roots.toArray(array);
+                    
+                    for (byte[] a : array)
+                        buffer = ArrayUtils.addAll(buffer, a);
+                    byte[] sig = TOMUtil.signMessage(key, buffer);
+                    TreeCertificate cert = new TreeCertificate(replicaId, array, timestamp, sig);
+                    reply = new Message(opcodeOK, cert, false, master);
+                    roots.clear();
+                }
+                
 		return reply;
 	}
 	
@@ -359,7 +402,7 @@ public class MessageProcessor {
 	 * @param clientId the client who sent the message
 	 * @return ROLLBACK_OK or ROLLBACK_ERROR if there was any exception.
 	 */
-	protected Message processRollback(Message m, int clientId) {
+	protected Message processRollback(Message m, int clientId, long timestamp) {
 		Message reply = null;
 		RollbackRequest rollReq = (RollbackRequest)m.getContents();
 		logger.debug("---- processRollback(). " + rollReq.getOldMaster() + " " + replicaId);
@@ -384,7 +427,7 @@ public class MessageProcessor {
 			FinishTransactionRequest finishReq = rollReq.getFinishReq();
 			if(finishReq.getOperations() != null && finishReq.getOperations().size() > 0) {
 				m = new Message(OpcodeList.ROLLBACK_SEND, rollReq.getFinishReq(), false, master);
-				reply = processFinishTransaction(m, clientId, OpcodeList.ROLLBACK_SEND);
+				reply = processFinishTransaction(m, clientId, OpcodeList.ROLLBACK_SEND, timestamp);
 			}
 			if(reply == null || reply.getOpcode() == OpcodeList.ROLLBACK_OK) {
 				try {
@@ -616,4 +659,11 @@ public class MessageProcessor {
 	protected void setInstallingState(boolean installing) {
 		this.installingState = installing;
 	}
+        
+        private PrivateKey key;
+
+        protected void setPrivateKey(PrivateKey k) {
+            this.key = k;
+            
+        }
 }
