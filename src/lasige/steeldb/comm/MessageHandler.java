@@ -252,13 +252,17 @@ public class MessageHandler {
 		public TOMMessage extractResponse(TOMMessage[] replies, int sameContent, int lastReceived) {
                     TOMMessage reply = replies[lastReceived];                    
                     
-                    if (Message.getMessage(reply.getContent()).getOpcode() == OpcodeList.COMMIT_OK) {   
+                    if (Message.getMessage(reply.getContent()).getOpcode() == OpcodeList.COMMIT_OK) {
+                        
+                        System.out.println("Extracting certificates...");
+                        
                         certs = new TreeCertificate[replies.length];
                         for (int i = 0; i < replies.length; i++) {
                             
                             if (replies[i] != null) {
                                 Message m = Message.getMessage(replies[i].getContent());
                                 certs[i] = (TreeCertificate) m.getContents();
+                                System.out.println("Extracted: " + certs[i]);
                             }
                         }
                     }

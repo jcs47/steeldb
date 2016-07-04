@@ -380,10 +380,11 @@ public class MessageProcessor {
                     byte[][] array = new byte[roots.size()][];
                     roots.toArray(array);
                     
-                    for (byte[] a : array)
-                        buffer = ArrayUtils.addAll(buffer, a);
+                    for (byte[] a : array) 
+                        buffer = ArrayUtils.addAll(buffer, a);                    
                     byte[] sig = TOMUtil.signMessage(key, buffer);
                     TreeCertificate cert = new TreeCertificate(replicaId, array, timestamp, sig);
+                    logger.debug("--- Created: " + cert);
                     reply = new Message(opcodeOK, cert, false, master);
                     roots.clear();
                 }
