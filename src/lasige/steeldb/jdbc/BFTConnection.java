@@ -75,6 +75,9 @@ public class BFTConnection implements Connection {
 
 	@Override
 	public void commit() throws SQLException {
+            
+                if (autoCommit || closed || !mHandler.hasOps()) return;
+            
 		LinkedList<Integer> hashTable = new LinkedList<Integer>();
 		Message commit = new Message(OpcodeList.COMMIT, hashTable, false, mHandler.getMaster()); //readonly?
 		Message reply = mHandler.send(commit, false);
