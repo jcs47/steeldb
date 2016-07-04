@@ -23,6 +23,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 
 import bftsmart.tom.util.TOMUtil;
+import java.util.LinkedList;
 
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
@@ -55,7 +56,7 @@ public class ResultSetData implements Serializable {
 	private static final long serialVersionUID = 4017257435190384824L;
 
 	private final RowSetMetaDataImpl metadata;
-	private final ArrayList<ArrayList<Object>> rows;
+	private final LinkedList<LinkedList<Object>> rows;
 	private boolean updateOnInsert;
 	private int numCols;
 
@@ -65,7 +66,7 @@ public class ResultSetData implements Serializable {
 		return metadata;
 	}
 
-	public ArrayList<ArrayList<Object>> getRows() {
+	public LinkedList<LinkedList<Object>> getRows() {
 		return rows;
 	}
 
@@ -149,12 +150,12 @@ public class ResultSetData implements Serializable {
 
 	}
 	
-	private ArrayList<ArrayList<Object>> populate(ResultSet data) {
-		ArrayList<ArrayList<Object>> rows = new ArrayList<ArrayList<Object>>();
+	private LinkedList<LinkedList<Object>> populate(ResultSet data) {
+		LinkedList<LinkedList<Object>> rows = new LinkedList<LinkedList<Object>>();
 		int countRow = 0;
 		try {
 			while (data.next()) {
-				ArrayList<Object> cols = new ArrayList<Object>();
+				LinkedList<Object> cols = new LinkedList<>();
 				int countCol = 1;
 				for (int i = 1; i <= numCols; i++) {
 					Object obj = data.getObject(i);
@@ -230,7 +231,7 @@ public class ResultSetData implements Serializable {
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
 		if(rows != null) {
-			for(ArrayList<Object> row : rows) {
+			for(LinkedList<Object> row : rows) {
 				sb.append("[row:");
 				for(Object col : row) {
 					sb.append(col).append(";");

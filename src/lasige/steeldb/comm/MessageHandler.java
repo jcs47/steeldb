@@ -182,7 +182,7 @@ public class MessageHandler {
 		}
 		
 		if(!transactionReadOnly && (opCode == OpcodeList.EXECUTE_QUERY || opCode == OpcodeList.EXECUTE_UPDATE)) {
-			byte[] replyBytes = TOMUtil.getBytes(String.valueOf(replyContent));
+			byte[] replyBytes = TOMUtil.getBytes(replyContent);
 			byte[] replyHash = TOMUtil.computeHash(replyBytes);
 			resHashes.add(replyHash);
 		}
