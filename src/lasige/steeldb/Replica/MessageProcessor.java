@@ -15,8 +15,6 @@ import org.apache.log4j.Logger;
 import bftsmart.reconfiguration.views.View;
 import bftsmart.tom.util.TOMUtil;
 import java.security.PrivateKey;
-import javax.crypto.Cipher;
-//import bftsmart.util.Printer;
 
 import lasige.steeldb.Replica.normalizaton.FirebirdNormalizer;
 import lasige.steeldb.Replica.normalizaton.NoNormalizer;
@@ -33,7 +31,6 @@ import lasige.steeldb.jdbc.ResultSetData;
 import lasige.steeldb.statemanagement.DBConnectionParams;
 import merkletree.TreeCertificate;
 import org.apache.commons.lang.ArrayUtils;
-import org.json.JSONArray;
 
 public class MessageProcessor {
 	private int replicaId;
@@ -384,7 +381,7 @@ public class MessageProcessor {
                         buffer = ArrayUtils.addAll(buffer, a);                    
                     byte[] sig = TOMUtil.signMessage(key, buffer);
                     TreeCertificate cert = new TreeCertificate(replicaId, array, timestamp, sig);
-                    logger.debug("--- Created: " + cert);
+                    logger.debug("--- Created: " + cert + " (signature size: " + (sig.length * 8) + " bits)");
                     reply = new Message(opcodeOK, cert, false, master);
                     roots.clear();
                 }
