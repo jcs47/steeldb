@@ -5,16 +5,14 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
+
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-import org.apache.log4j.Logger;
-
 import bftsmart.reconfiguration.views.View;
 import bftsmart.tom.util.TOMUtil;
-import java.security.PrivateKey;
 
 import lasige.steeldb.Replica.normalizaton.FirebirdNormalizer;
 import lasige.steeldb.Replica.normalizaton.NoNormalizer;
@@ -29,8 +27,12 @@ import lasige.steeldb.jdbc.BFTDatabaseMetaData;
 import lasige.steeldb.jdbc.BFTRowSet;
 import lasige.steeldb.jdbc.ResultSetData;
 import lasige.steeldb.statemanagement.DBConnectionParams;
+
+import java.security.PrivateKey;
+
 import merkletree.TreeCertificate;
-import org.apache.commons.lang.ArrayUtils;
+
+import org.apache.log4j.Logger;
 
 public class MessageProcessor {
 	private int replicaId;
@@ -143,7 +145,7 @@ public class MessageProcessor {
                         logger.debug("---- Query: " + sql);
                         ResultSet rs = s.executeQuery(sql);
                         ResultSetData rsd = new ResultSetData(rs);
-                        byte[] encRoot = rsd.getMerkleTree().digest();;
+                        byte[] encRoot = TreeCertificate.getMerkleTree(rsd.getRows()).digest();
                         roots.add(encRoot);
                         logger.debug("---- Result EXECUTE QUERY: " + rsd);
                         logger.debug("---- rsd.metadata hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getMetadata()))) + ", rsd.getRows hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getRows()))));
@@ -155,7 +157,7 @@ public class MessageProcessor {
                         logger.debug("---- Query: " + sql);
                         ResultSet rs = s.executeQuery(sql);
                         ResultSetData rsd = new ResultSetData(rs);
-                        byte[] encRoot = rsd.getMerkleTree().digest();
+                        byte[] encRoot = TreeCertificate.getMerkleTree(rsd.getRows()).digest();
                         roots.add(encRoot);
                         logger.debug("---- Result EXECUTE QUERY: " + rsd);
                         logger.debug("---- rsd.metadata hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getMetadata()))) + ", rsd.getRows hash: " + Arrays.toString(TOMUtil.computeHash(TOMUtil.getBytes(rsd.getRows()))));
@@ -360,27 +362,10 @@ public class MessageProcessor {
                 if (reply == null) {
                     
                     logger.debug("--- Creating Certificate");
-                    byte[] buffer = new byte[] {
-                        (byte)(replicaId >>> 24),
-                        (byte)(replicaId >>> 16),
-                        (byte)(replicaId >>> 8),
-                        (byte)replicaId,
-                        (byte)(timestamp >>> 56),
-                        (byte)(timestamp >>> 48),
-                        (byte)(timestamp >>> 40),
-                        (byte)(timestamp >>> 32),
-                        (byte)(timestamp >>> 24),
-                        (byte)(timestamp >>> 16),
-                        (byte)(timestamp >>> 8),
-                        (byte)timestamp};
-                    
-                    byte[][] array = new byte[roots.size()][];
-                    roots.toArray(array);
-                    
-                    for (byte[] a : array) 
-                        buffer = ArrayUtils.addAll(buffer, a);                    
+                    byte[] buffer = TreeCertificate.concatenate(replicaId, timestamp, roots);
+                    logger.debug("--- Concatenation before signing: " + Arrays.toString(buffer));
                     byte[] sig = TOMUtil.signMessage(key, buffer);
-                    TreeCertificate cert = new TreeCertificate(replicaId, array, timestamp, sig);
+                    TreeCertificate cert = new TreeCertificate(replicaId, timestamp, sig);
                     logger.debug("--- Created: " + cert + " (signature size: " + (sig.length * 8) + " bits)");
                     reply = new Message(opcodeOK, cert, false, master);
                     roots.clear();
@@ -391,10 +376,10 @@ public class MessageProcessor {
 	
 	/**
 	 * Process a rollback request from the client. If it was triggered by
-	 * a master changed ocurred before, the transactions in the old master
+	 * a master changed occurred before, the transactions in the old master
 	 * must be rolled back. The transactions in the remaining replicas must
 	 * only to be reset. In cases where this rollback wasn't triggered due
-	 * to master changes occured before, it is called the normal behavior,
+	 * to master changes occurred before, it is called the normal behavior,
 	 * where processFinishTransaction compares operations and responses hashes.
 	 * @param m the RollBackRequest message
 	 * @param clientId the client who sent the message
@@ -664,4 +649,5 @@ public class MessageProcessor {
             this.key = k;
             
         }
+
 }
