@@ -69,13 +69,13 @@ public class Replica extends DefaultRecoverable {
             return replies;
         }
                 
-	private synchronized byte[] executeSingle(byte[] command, MessageContext msgCtx) {
+	private byte[] executeSingle(byte[] command, MessageContext msgCtx) {
 		byte [] reply = null;
 		
 		Message m = Message.getMessage(command);
 		Message replyMsg = null;
 		
-		logger.debug("ordered, " + m.getClientId() + ", " + m.getContents());
+		logger.debug("---- Client: " + m.getClientId() + ", ordered, " + m.getClientId() + ", " + m.getContents());
 		
 		switch(m.getOpcode()) {
 		case OpcodeList.GET_STATE:
@@ -134,12 +134,12 @@ public class Replica extends DefaultRecoverable {
 	}
 
 	@Override
-	public synchronized byte[] appExecuteUnordered(byte[] command, MessageContext msgCtx) {
+	public byte[] appExecuteUnordered(byte[] command, MessageContext msgCtx) {
 		byte[] replyBytes = null;
 		Message reply = null;
 		Message m = Message.getMessage(command);
 
-		logger.debug("unordered, " + m.getClientId() + ", " + m.getContents());
+		logger.debug("---- Client: " + m.getClientId() + ", unordered, " + m.getClientId() + ", " + m.getContents());
 
 		switch(m.getOpcode()) {
 		case OpcodeList.EXECUTE:
