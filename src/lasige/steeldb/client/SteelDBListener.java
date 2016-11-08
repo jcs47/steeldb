@@ -26,14 +26,15 @@ public class SteelDBListener implements ReplyListener {
 	// matching replies and discard the unnecessary
 	private boolean hasResult;
 	private final int master;
+        private int clientID;
 
-	private Logger logger = Logger.getLogger("steeldb_client");
+	private Logger logger;
 
-	public SteelDBListener(byte[] request, Comparator<byte[]> comparator, Extractor extractor) {
-		this(request, comparator, extractor, 0);
+	public SteelDBListener(int id, byte[] request, Comparator<byte[]> comparator, Extractor extractor) {
+		this(id, request, comparator, extractor, 0);
 	}
 
-	public SteelDBListener(byte[] request, Comparator<byte[]> comparator, Extractor extractor, int master) {
+	public SteelDBListener(int id, byte[] request, Comparator<byte[]> comparator, Extractor extractor, int master) {
 		this.comparator = comparator;
 		this.extractor = extractor;
 		canReceiveLock = new ReentrantLock();
@@ -41,14 +42,16 @@ public class SteelDBListener implements ReplyListener {
 		response = null;
 		sm = new Semaphore(0);
 		this.master = master;
+                clientID = id;
+                logger = Logger.getLogger("steeldb_client");
 	}
 
 	public TOMMessage getResponse() {
 		if(response != null)
 			return response;
 		try {
-			if (!this.sm.tryAcquire(5, TimeUnit.SECONDS)) {
-				logger.error("Couldn't get reply from server");
+			if (!this.sm.tryAcquire(30, TimeUnit.SECONDS)) {
+				logger.error("Client " + clientID + " couldn't get reply from server");
 				return null;
 			}
 		} catch (InterruptedException ex) {
@@ -59,7 +62,7 @@ public class SteelDBListener implements ReplyListener {
 	}
 
         //public void replyReceived(TOMMessage reply) { // code of old smart
-	public void replyReceived(RequestContext rc, TOMMessage tomm) {
+	public void replyReceived(RequestContext rc, TOMMessage tomm) {            
             if(hasResult)
 			return;
 //		logger.debug("waiting for canREceiveLock");
