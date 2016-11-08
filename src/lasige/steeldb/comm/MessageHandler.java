@@ -20,7 +20,11 @@ import bftsmart.tom.util.TOMUtil;
 public class MessageHandler {
 
 	private AsynchServiceProxy proxy;
-	private boolean transactionReadOnly;
+        
+        //I suspect this optimization is causing read/write dependencies in
+        //non-masters, which prevents operations from being all executed
+        //private boolean transactionReadOnly;
+	private boolean transactionReadOnly = false;
 	private LinkedList<byte[]> resHashes;
 	private LinkedList<Message> operations;
 	private static final String CONFIG_FOLDER = System.getProperty("divdb.folder", "config");
@@ -29,13 +33,16 @@ public class MessageHandler {
 	private int master;
 	private int oldMaster;
 	
-    private Logger logger = Logger.getLogger("steeldb_client");
+        private Logger logger = Logger.getLogger("steeldb_client");
 	
 	public MessageHandler(int clientId) {
 		clientId = FIRST_CLIENT_ID + clientId;
                 //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
                 proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
-		transactionReadOnly = true;
+                
+                //I suspect this optimization is causing read/write dependencies in
+                //non-masters, which prevents operations from being all executed
+		//transactionReadOnly = true;
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
 		this.clientId = clientId;
@@ -46,7 +53,10 @@ public class MessageHandler {
 	public MessageHandler(int clientId, boolean replica) {
                 //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
                 proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
-		transactionReadOnly = true;
+                
+                //I suspect this optimization is causing read/write dependencies in
+                //non-masters, which prevents operations from being all executed
+		//transactionReadOnly = true;
 		this.clientId = clientId;
 		master = 0;
 //		logger.debug("Opening connection for client " + proxy.getProcessId());
@@ -94,20 +104,25 @@ public class MessageHandler {
 				clearOpsRes();
 		} else {
 			if(autoCommit) {
-				if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH) {
-					response = proxy.invokeOrdered(m.getBytes());
-				} else {
-					response = proxy.invokeUnordered(m.getBytes());
-				}
+				
+                                //I suspect this optimization is causing read/write dependencies in
+                                //non-masters, which prevents operations from being all executed
+                                //if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH) {
+                                        response = proxy.invokeOrdered(m.getBytes());
+				//} else {
+				//	response = proxy.invokeUnordered(m.getBytes());
+				//}
 			} else {
-				if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH)
+                                //I suspect this optimization is causing read/write dependencies in
+                                //non-masters, which prevents operations from being all executed
+                                //if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH)
 					transactionReadOnly = false;
 				if(transactionReadOnly) {
 					response = proxy.invokeUnordered(m.getBytes());
 				} else {
 					operations.add(m);
 					int[] processes = new int[] {master};
-					SteelDBListener steelListener = new SteelDBListener(m.getBytes(), new BFTComparator(), new BFTExtractor(), master);
+					SteelDBListener steelListener = new SteelDBListener(clientId, m.getBytes(), new BFTComparator(), new BFTExtractor(), master);
 					try {
 						//proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST); // old code of smart
                                                 
@@ -175,7 +190,12 @@ public class MessageHandler {
 			}
 		}
 		
-		if(!transactionReadOnly) {
+                //I suspect this optimization is causing read/write dependencies in
+                //non-masters, which prevents operations from being all executed
+                //if(!transactionReadOnly) {
+		if(!transactionReadOnly && !autoCommit && opCode != OpcodeList.COMMIT && opCode != OpcodeList.ROLLBACK_SEND
+				&& opCode != OpcodeList.COMMIT_AUTO	&& opCode != OpcodeList.CLOSE
+				&& opCode != OpcodeList.LOGIN_SEND && opCode != OpcodeList.GET_DB_METADATA) {
 			byte[] replyBytes = TOMUtil.getBytes(replyContent);
 			byte[] replyHash = TOMUtil.computeHash(replyBytes);
 			resHashes.add(replyHash);
@@ -231,9 +251,11 @@ public class MessageHandler {
 				}
 			}
 
-			if((m1.getContents() == null && m2.getContents() == null) ||
+			if (m1.getContents() != null && m2.getContents() != null &&
 							m1.getContents().equals(m2.getContents()))
 				return 0;
+                        else if (m1.getContents() == null && m2.getContents() == null)
+                                return 0;
 			else {
 				System.out.println("contents not matching: " + m1.getOpcode() + "," + m1.getContents() + "," + m2.getContents());
 				return -1;

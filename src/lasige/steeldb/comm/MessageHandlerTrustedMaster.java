@@ -29,7 +29,7 @@ public class MessageHandlerTrustedMaster {
 	private int master;
 	private int oldMaster;
 	
-    private Logger logger = Logger.getLogger("steeldb_client");
+        private Logger logger = Logger.getLogger("steeldb_client");
 	
 	public MessageHandlerTrustedMaster(int clientId) {
 		clientId = FIRST_CLIENT_ID + clientId;
@@ -104,7 +104,7 @@ public class MessageHandlerTrustedMaster {
 				if(!transactionReadOnly)
 					operations.add(m);
 				int[] processes = new int[] {master};
-				SteelDBListener steelListener = new SteelDBListener(m.getBytes(), new BFTComparator(), new BFTExtractor(), master);
+				SteelDBListener steelListener = new SteelDBListener(clientId, m.getBytes(), new BFTComparator(), new BFTExtractor(), master);
 				try {
 					//proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST); // old code of smart
                                         
