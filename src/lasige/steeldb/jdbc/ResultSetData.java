@@ -217,7 +217,7 @@ public class ResultSetData implements Serializable {
 				for(Object col : row) {
 					sb.append(col).append(";");
 				}
-				sb.append("]\n");
+				sb.append("]\t");
 			}
 		}
                 else {
