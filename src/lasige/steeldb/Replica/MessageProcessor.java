@@ -361,6 +361,7 @@ public class MessageProcessor {
 				try {
 					logger.debug("---- Client: " + clientId + ", rollbacking transaction in the old master");
 					connManager.rollback();
+                                        logger.debug("---- Client: " + clientId + ", rollbacked transaction in the old master");
 				} catch (SQLException sqle) {
 					logger.error("---- Client: " + clientId + ", ROLLBACK ERROR", sqle);
 //					sqle.printStackTrace();
@@ -383,7 +384,9 @@ public class MessageProcessor {
 			if(reply == null || reply.getOpcode() == OpcodeList.ROLLBACK_OK) {
 				try {
 					ConnManager connManager = sm.getConnManager(clientId);
+                                        logger.debug("---- Client: " + clientId + ", rollbacking transaction");
 					connManager.rollback();
+                                        logger.debug("---- Client: " + clientId + ", rollbacked transaction");
 					if(reply == null)
 						reply = new Message(OpcodeList.ROLLBACK_OK, null, false, master);
 				} catch (SQLException sqle) {

@@ -69,8 +69,11 @@ public class BFTConnection implements Connection {
 		if(reply.getOpcode() == OpcodeList.ROLLBACK_ERROR)
                     if ((reply.getContents() == null) || !(reply.getContents() instanceof SQLException))
 			throw new SQLException("Error during rollback");
-                else
+                    else
                         throw (SQLException) reply.getContents();
+                else if (reply.getOpcode() != OpcodeList.ROLLBACK_OK) {
+                    throw new SQLException("Unexpected opcode during rollback: " + reply.getOpcode());
+                }                
 	}
 
 	@Override
@@ -81,12 +84,12 @@ public class BFTConnection implements Connection {
             
 		LinkedList<Integer> hashTable = new LinkedList<Integer>();
 		Message commit = new Message(OpcodeList.COMMIT, hashTable, false, mHandler.getMaster()); //readonly?
-		Message reply = mHandler.send(commit, false);
+                Message reply = mHandler.send(commit, false);
 		
 		if(reply.getOpcode() == OpcodeList.COMMIT_ERROR) {
                      if ((reply.getContents() == null) || !(reply.getContents() instanceof SQLException))
 			throw new SQLException("Commit Error");
-                    else
+                     else
                         throw (SQLException) reply.getContents();
                 } else if(reply.getOpcode() == OpcodeList.TIMEOUT) {
 			throw new SQLException("Timeout during commit");
@@ -96,7 +99,9 @@ public class BFTConnection implements Connection {
                     else
                         throw (SQLException) reply.getContents();
                 }
-
+                else if (reply.getOpcode() != OpcodeList.COMMIT_OK) {
+                    throw new SQLException("Unexpected opcode during commit: " + reply.getOpcode());
+                }
 	}
 	
 	@Override

@@ -30,6 +30,11 @@ public class MessageHandler {
 	private static final String CONFIG_FOLDER = System.getProperty("divdb.folder", "config");
 	private static final int FIRST_CLIENT_ID = Integer.valueOf(System.getProperty("divdb.firstclient", "1000"));
 	private final int clientId;
+
+        public int getClientId() {
+            return clientId;
+        }
+        
 	private int master;
 	private int oldMaster;
 	
@@ -97,7 +102,8 @@ public class MessageHandler {
 				commitByAutoCommitChange = true;
 			if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange) {
 				m = prepareFinishTransactionRequest(opCode);
-				transactionReadOnly = true;
+				//transactionReadOnly = true;
+                                
 			}
 			response = proxy.invokeOrdered(m.getBytes());
 			if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange)
