@@ -16,6 +16,9 @@ import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.util.Extractor;
 import bftsmart.tom.util.TOMUtil;
+import bftsmart.tom.util.Storage;
+import java.util.HashMap;
+import java.util.logging.Level;
 
 public class MessageHandler {
 
@@ -30,6 +33,9 @@ public class MessageHandler {
 	private static final String CONFIG_FOLDER = System.getProperty("divdb.folder", "config");
 	private static final int FIRST_CLIENT_ID = Integer.valueOf(System.getProperty("divdb.firstclient", "1000"));
 	private final int clientId;
+        
+        private long nextSequence;
+        protected HashMap<Long,Long> lastCommitedTrans = null;
 
         public int getClientId() {
             return clientId;
@@ -37,7 +43,10 @@ public class MessageHandler {
         
 	private int master;
 	private int oldMaster;
-	
+        
+	//private Storage storeSize = new Storage(100000);
+        //private Storage storeOps = new Storage(100000);
+
         private Logger logger = Logger.getLogger("steeldb_client");
 	
 	public MessageHandler(int clientId) {
@@ -50,8 +59,10 @@ public class MessageHandler {
 		//transactionReadOnly = true;
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
+                this.lastCommitedTrans = new HashMap<>();
 		this.clientId = clientId;
 		master = 0;
+                nextSequence = 0;
 		logger.debug("Client " + clientId + "opened a connection. MessageHandler created");
 	}
 	
@@ -62,8 +73,10 @@ public class MessageHandler {
                 //I suspect this optimization is causing read/write dependencies in
                 //non-masters, which prevents operations from being all executed
 		//transactionReadOnly = true;
+                this.lastCommitedTrans = new HashMap<>();
 		this.clientId = clientId;
 		master = 0;
+                nextSequence = 0;
 //		logger.debug("Opening connection for client " + proxy.getProcessId());
 	}
 
@@ -83,130 +96,169 @@ public class MessageHandler {
 	 * to garantee that the replicas are correct.
 	 */
 	public synchronized Message send(Message m, boolean autoCommit) {            
-                try {
-			m.setClientId(clientId);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		int opCode = m.getOpcode();
-		logger.debug("---- Client " + clientId + ", OpCode: " + m.getOpcode() + ", Msg: " + m.getContents());
-                if (m.getContents() instanceof String) logger.debug("---- Invoking query: '" + ((String) m.getContents()) + "'");
+            try {
+                m.setClientId(clientId);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            m.setOpSequence(nextSequence++);
+            Long l = lastCommitedTrans.remove(m.getOpSequence() - 1);
+            m.setLastCommitedTransId((l != null ? l : -1));
+            int opCode = m.getOpcode();
+            logger.debug("---- Client " + clientId + ", OpCode: " + m.getOpcode() + ", Msg: " + m.getContents());
+            if (m.getContents() instanceof String) logger.debug("---- Invoking query: '" + ((String) m.getContents()) + "'");
 //		logger.debug("---- Autocommit  " + autoCommit + ". Client id: " + proxy.getProcessId());
-		byte[] response = null;
-		
-		if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND
-				|| opCode == OpcodeList.COMMIT_AUTO	|| opCode == OpcodeList.CLOSE
-				|| opCode == OpcodeList.LOGIN_SEND || opCode == OpcodeList.GET_DB_METADATA) {
-			boolean commitByAutoCommitChange = false;
-			if((!transactionReadOnly && opCode == OpcodeList.COMMIT_AUTO && (Boolean)m.getContents().equals(true)))
-				commitByAutoCommitChange = true;
-			if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange) {
-				m = prepareFinishTransactionRequest(opCode);
-				//transactionReadOnly = true;
-                                
-			}
-			response = proxy.invokeOrdered(m.getBytes());
-			if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange)
-				clearOpsRes();
-		} else {
-			if(autoCommit) {
-				
-                                //I suspect this optimization is causing read/write dependencies in
-                                //non-masters, which prevents operations from being all executed
-                                //if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH) {
-                                        response = proxy.invokeOrdered(m.getBytes());
-				//} else {
-				//	response = proxy.invokeUnordered(m.getBytes());
-				//}
-			} else {
-                                //I suspect this optimization is causing read/write dependencies in
-                                //non-masters, which prevents operations from being all executed
-                                //if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH)
-					transactionReadOnly = false;
-				if(transactionReadOnly) {
-					response = proxy.invokeUnordered(m.getBytes());
-				} else {
-					operations.add(m);
-					int[] processes = new int[] {master};
-					SteelDBListener steelListener = new SteelDBListener(clientId, m.getBytes(), new BFTComparator(), new BFTExtractor(), master);
-					try {
-						//proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST); // old code of smart
-                                                
-                                            proxy.invokeAsynchRequest(m.getBytes(), processes, steelListener, TOMMessageType.UNORDERED_REQUEST);
-					} catch(Exception ex) {
-						logger.error("The master replica is not reacheable", ex);
-					}
-					TOMMessage message = steelListener.getResponse(); 
+            byte[] response = null;
+
+            if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND
+                        || opCode == OpcodeList.COMMIT_AUTO || opCode == OpcodeList.CLOSE
+                        || opCode == OpcodeList.LOGIN_SEND  || opCode == OpcodeList.GET_DB_METADATA) {
+                boolean commitByAutoCommitChange = false;
+                if((!transactionReadOnly && opCode == OpcodeList.COMMIT_AUTO && (Boolean)m.getContents().equals(true)))
+                    commitByAutoCommitChange = true;
+                if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange) {
+                    m = prepareFinishTransactionRequest(opCode, m.getOpSequence(), m.getLastCommitedTransId());
+                    //transactionReadOnly = true;
+
+                }
+                
+                byte[] b = m.getBytes();
+                response = proxy.invokeOrdered(b);
+                /*if(opCode == OpcodeList.COMMIT) {
+
+                    storeSize.store(b.length);
+                    storeOps.store(operations.size());
+
+                    if (storeSize.getCount() % 100 == 0) {
+                        System.out.println("\n"+Thread.currentThread().getName() + "// Average size for " +  storeSize.getCount() + " commits = " + storeSize.getAverage(false) + " bytes ");
+                        System.out.println(Thread.currentThread().getName() + "// Standard desviation for " + storeSize.getCount() + " commits = " + storeSize.getDP(false));
+                        System.out.println(Thread.currentThread().getName() + "// Maximum size for " + storeSize.getCount() + " commits = " + storeSize.getMax(false) + " bytes ");
+                        System.out.println(Thread.currentThread().getName() + "// Median for " + storeSize.getCount() + " commits = " + storeSize.getPercentile(0.5) + " bytes ");
+                        System.out.println(Thread.currentThread().getName() + "// 90th for " + storeSize.getCount() + " commits = " + storeSize.getPercentile(0.9) + " bytes ");
+                        System.out.println(Thread.currentThread().getName() + "// 95th for " + storeSize.getCount() + " commits = " + storeSize.getPercentile(0.95) + " bytes ");
+                        System.out.println(Thread.currentThread().getName() + "// 99th for " + storeSize.getCount() + " commits = " + storeSize.getPercentile(0.99) + " bytes ");
+                    }
+
+                    if (storeOps.getCount() % 100 == 0) {
+                        System.out.println("\n"+Thread.currentThread().getName() + "// Average ops for " +  storeOps.getCount() + " commits = " + storeOps.getAverage(false) + " ops ");
+                        System.out.println(Thread.currentThread().getName() + "// Standard desviation for " + storeOps.getCount() + " commits = " + storeOps.getDP(false));
+                        System.out.println(Thread.currentThread().getName() + "// Maximum ops for " + storeOps.getCount() + " commits = " + storeOps.getMax(false) + " ops ");
+                        System.out.println(Thread.currentThread().getName() + "// Median for " + storeOps.getCount() + " commits = " + storeOps.getPercentile(0.5) + " ops ");
+                        System.out.println(Thread.currentThread().getName() + "// 90th for " + storeOps.getCount() + " commits = " + storeOps.getPercentile(0.9) + " ops ");
+                        System.out.println(Thread.currentThread().getName() + "// 95th for " + storeOps.getCount() + " commits = " + storeOps.getPercentile(0.95) + " ops ");
+                        System.out.println(Thread.currentThread().getName() + "// 99th for " + storeOps.getCount() + " commits = " + storeOps.getPercentile(0.99) + " ops ");
+                    }
+                }*/
+
+                if(opCode == OpcodeList.COMMIT || opCode == OpcodeList.ROLLBACK_SEND || commitByAutoCommitChange)
+                    clearOpsRes();
+            } else {
+                if(autoCommit) {
+
+                    //I suspect this optimization is causing read/write dependencies in
+                    //non-masters, which prevents operations from being all executed
+                    //if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH) {
+                            response = proxy.invokeOrdered(m.getBytes());
+                    //} else {
+                    //	response = proxy.invokeUnordered(m.getBytes());
+                    //}
+                } else {
+                    //I suspect this optimization is causing read/write dependencies in
+                    //non-masters, which prevents operations from being all executed
+                    //if(opCode == OpcodeList.EXECUTE_UPDATE || opCode == OpcodeList.EXECUTE_BATCH)
+                        transactionReadOnly = false;
+                    if(transactionReadOnly) {
+                        response = proxy.invokeUnordered(m.getBytes());
+                    } else {
+                        
+                        if (proxy.getViewManager().getCurrentViewN() > 1)
+                            operations.add(m);
+                        //int[] processes = new int[] {master};
+                        int[] processes = proxy.getViewManager().getCurrentViewProcesses();
+                        SteelDBListener steelListener = new SteelDBListener(clientId, m.getBytes(), new BFTComparator(), new BFTExtractor(), master);                        
+                        try {
+                            //proxy.invokeAsynchronous(m.getBytes(), steelListener, processes, TOMMessageType.UNORDERED_REQUEST); // old code of smart
+
+                            proxy.invokeAsynchRequest(m.getBytes(), processes, steelListener, TOMMessageType.UNORDERED_REQUEST);
+                        } catch(Exception ex) {
+                            logger.error("The master replica is not reacheable", ex);
+                        }
+                        TOMMessage message = steelListener.getResponse(); 
 //						logger.debug("Message:" + message);
-					if(message != null) { 
-                                            
-                                                proxy.cleanAsynchRequest(message.getSequence());
-						response = message.getContent();
-					} else { // the master didn't reply on time. Will invoke a master change
-						logger.info("client " + clientId + " invoking master change");
-						if(operations.size() == 0)
-							operations.add(m);
-						Message replyMsg = invokeMasterChange();
-						if(replyMsg == null) {
-							return new Message(OpcodeList.MASTER_CHANGE_ERROR, null, false, master);
-						} else {
-							logger.info("master change executed for " + clientId + ", status: " + replyMsg.getOpcode());
-							if(replyMsg.getContents() instanceof ResultSetData) {
-								ResultSetData rsd = (ResultSetData) replyMsg.getContents();
-								try {
-									BFTRowSet bftrs = new BFTRowSet();
-									bftrs.populate(rsd);
-									Message ret = new Message(replyMsg.getOpcode(), bftrs, replyMsg.isUnordered(), replyMsg.getMaster());
-                                                                        ret.setAutoGeneratedKeys(replyMsg.getAutoGeneratedKeys());
-                                                                        ret.setResultSetType(replyMsg.getResultSetType());
-                                                                        ret.setResultSetConcurrency(replyMsg.getResultSetConcurrency());
-                                                                        return ret;
-								} catch (SQLException e) {
-									logger.error("Error populating BFTRowSet", e);
-								}
-							} else
-								return replyMsg;
-						}
-					}
-				}
-			}
-		}
-		
-		Message reply = Message.getMessage(response);
-		if(reply != null) {
-			master = reply.getMaster();
-                        logger.debug("Reply opcode: " + m.getOpcode() + ", content: "  + reply.getContents());
-		} else {
-                        logger.info("reply is null. " + m.getClientId() + ", opt: " + opCode + ", contents: " + m.getContents());
-		}
-		
-		Object replyContent = reply.getContents();
-		if(replyContent instanceof ResultSetData) {
-			ResultSetData rsd = (ResultSetData) replyContent;
-			try {
-				BFTRowSet bftrs = new BFTRowSet();
-				bftrs.populate(rsd);
-				Message tmp = new Message(reply.getOpcode(), bftrs, reply.isUnordered(), reply.getMaster());                                
-                                tmp.setAutoGeneratedKeys(reply.getAutoGeneratedKeys());
-                                tmp.setResultSetType(reply.getResultSetType());
-                                tmp.setResultSetConcurrency(reply.getResultSetConcurrency());
-                                reply = tmp;
-                        } catch (SQLException e) {
-				logger.error("Error populating BFTRowSet", e);
-			}
-		}
-		
-                //I suspect this optimization is causing read/write dependencies in
-                //non-masters, which prevents operations from being all executed
-                //if(!transactionReadOnly) {
-		if(!transactionReadOnly && !autoCommit && opCode != OpcodeList.COMMIT && opCode != OpcodeList.ROLLBACK_SEND
-				&& opCode != OpcodeList.COMMIT_AUTO	&& opCode != OpcodeList.CLOSE
-				&& opCode != OpcodeList.LOGIN_SEND && opCode != OpcodeList.GET_DB_METADATA) {
-			byte[] replyBytes = TOMUtil.getBytes(replyContent);
-			byte[] replyHash = TOMUtil.computeHash(replyBytes);
-			resHashes.add(replyHash);
-		}
-		return reply;
+                        if(message != null) { 
+
+                            proxy.cleanAsynchRequest(message.getSequence());
+                            response = message.getContent();
+                        } else { // the master didn't reply on time. Will invoke a master change
+                            logger.info("client " + clientId + " invoking master change");
+                            if(proxy.getViewManager().getCurrentViewN() > 1 && operations.size() == 0)
+                                operations.add(m);
+                            Message replyMsg = invokeMasterChange();
+                            if(replyMsg == null) {
+                                return new Message(OpcodeList.MASTER_CHANGE_ERROR, null, false, master);
+                            } else {
+                                logger.info("master change executed for " + clientId + ", status: " + replyMsg.getOpcode());
+                                if(replyMsg.getContents() instanceof ResultSetData) {
+                                    ResultSetData rsd = (ResultSetData) replyMsg.getContents();
+                                    try {
+                                        BFTRowSet bftrs = new BFTRowSet();
+                                        bftrs.populate(rsd);
+                                        Message ret = new Message(replyMsg.getOpcode(), bftrs, replyMsg.isUnordered(), replyMsg.getMaster());
+                                        ret.setAutoGeneratedKeys(replyMsg.getAutoGeneratedKeys());
+                                        ret.setResultSetType(replyMsg.getResultSetType());
+                                        ret.setResultSetConcurrency(replyMsg.getResultSetConcurrency());
+                                        return ret;
+                                    } catch (SQLException e) {
+                                            logger.error("Error populating BFTRowSet", e);
+                                    }
+                                } else
+                                    return replyMsg;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Message reply = Message.getMessage(response);
+            if(reply != null) {
+                master = reply.getMaster();
+                logger.debug("Reply opcode: " + m.getOpcode() + ", content: "  + reply.getContents());
+            } else {
+                logger.info("reply is null. " + m.getClientId() + ", opt: " + opCode + ", contents: " + m.getContents());
+            }
+
+            //if (reply.getOpcode() == OpcodeList.EXECUTE_OK ||  reply.getOpcode() == OpcodeList.EXECUTE_QUERY_OK || 
+            //        reply.getOpcode() == OpcodeList.EXECUTE_UPDATE_OK || reply.getOpcode() == OpcodeList.EXECUTE_BATCH_OK)
+            if (reply.getLastCommitedTransId() != -1)
+                lastCommitedTrans.put(m.getOpSequence(), reply.getLastCommitedTransId());
+            
+            Object replyContent = reply.getContents();
+            if(replyContent instanceof ResultSetData) {
+                    ResultSetData rsd = (ResultSetData) replyContent;
+                    try {
+                            BFTRowSet bftrs = new BFTRowSet();
+                            bftrs.populate(rsd);
+                            Message tmp = new Message(reply.getOpcode(), bftrs, reply.isUnordered(), reply.getMaster());                                
+                            tmp.setAutoGeneratedKeys(reply.getAutoGeneratedKeys());
+                            tmp.setResultSetType(reply.getResultSetType());
+                            tmp.setResultSetConcurrency(reply.getResultSetConcurrency());
+                            reply = tmp;
+                    } catch (SQLException e) {
+                            logger.error("Error populating BFTRowSet", e);
+                    }
+            }
+
+            //I suspect this optimization is causing read/write dependencies in
+            //non-masters, which prevents operations from being all executed
+            //if(!transactionReadOnly) {
+            if(proxy.getViewManager().getCurrentViewN() > 1 && !transactionReadOnly && !autoCommit && opCode != OpcodeList.COMMIT && opCode != OpcodeList.ROLLBACK_SEND
+                            && opCode != OpcodeList.COMMIT_AUTO	&& opCode != OpcodeList.CLOSE
+                            && opCode != OpcodeList.LOGIN_SEND && opCode != OpcodeList.GET_DB_METADATA) {
+                    byte[] replyBytes = TOMUtil.getBytes(replyContent);
+                    byte[] replyHash = TOMUtil.computeHash(replyBytes);
+                    resHashes.add(replyHash);
+            }
+            return reply;
 	}
 
 	public void close() {
@@ -306,8 +358,11 @@ public class MessageHandler {
 	 * @param opcode The code defining if the request is for commit or rollback.
 	 * @return The commit request message
 	 */
-	private Message prepareFinishTransactionRequest(int opcode) {
-		FinishTransactionRequest finishReq = new FinishTransactionRequest(resHashes, operations);
+	private Message prepareFinishTransactionRequest(int opcode, long sequence, long transId) {
+
+                FinishTransactionRequest finishReq = new FinishTransactionRequest(resHashes, (operations.peekFirst() != null ? operations.peekFirst().getOpSequence() : -1));
+
+                //FinishTransactionRequest finishReq = new FinishTransactionRequest(null, (operations.peekFirst() != null ? operations.peekFirst().getOpSequence() : -1));
 		Message message;
 		if(opcode == OpcodeList.ROLLBACK_SEND) {
 			boolean masterChanged = oldMaster != master;
@@ -320,6 +375,8 @@ public class MessageHandler {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+                message.setOpSequence(sequence);
+                message.setLastCommitedTransId(transId);
 		return message;
 	}
 	

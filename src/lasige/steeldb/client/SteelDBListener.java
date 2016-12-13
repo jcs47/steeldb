@@ -63,19 +63,18 @@ public class SteelDBListener implements ReplyListener {
 
         //public void replyReceived(TOMMessage reply) { // code of old smart
 	public void replyReceived(RequestContext rc, TOMMessage tomm) {            
-            if(hasResult)
-			return;
-//		logger.debug("waiting for canREceiveLock");
-		canReceiveLock.lock();
-//		logger.debug("canReceive lock granted");
-//		logger.debug("Receiving reply from " + reply.getSender() + " with reqId:" + reply.getSequence());
-		if(tomm.getSender() == master) {
-                    response = tomm;
-		}
-//		logger.debug("response:" + response);
-		hasResult = true;
-		this.sm.release();
-		canReceiveLock.unlock();
+            if(hasResult) return;
+            
+            canReceiveLock.lock();
+//          logger.debug("canReceive lock granted");
+//	    logger.debug("Receiving reply from " + reply.getSender() + " with reqId:" + reply.getSequence());
+            if(tomm.getSender() == master) {
+                response = tomm;
+//              logger.debug("response:" + response);
+                hasResult = true;
+                this.sm.release();
+            }
+            canReceiveLock.unlock();
 	}
 
 }

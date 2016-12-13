@@ -22,6 +22,7 @@ import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
 import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.server.defaultservices.DefaultRecoverable;
+import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
 
 import org.apache.log4j.Logger;
@@ -34,10 +35,18 @@ public class Replica extends DefaultRecoverable {
         private ServiceReplica replica;
 	private MessageProcessor mProcessor = null;
 	private ConnectionParams connParams = null;
-	private ReplicaContext replicaContext;
+	//private ReplicaContext replicaContext;
 	
-    private StateManager stateManager;
+    //private StateManager stateManager;
     
+    //private Storage storeBatchLatency = new Storage(20000);
+    //private Storage storeBatchSize = new Storage(20000);
+
+    //private Storage totalLatency = new Storage(20000);
+    //private Storage deliveryLatency = new Storage(20000);
+    //private Storage posConsLatency = new Storage(20000);
+    //private Storage execLatency = new Storage(20000);
+
     private Logger logger = Logger.getLogger("steeldb_replica");
     
     int count = 0;
@@ -49,7 +58,7 @@ public class Replica extends DefaultRecoverable {
 		mProcessor = new MessageProcessor(id, connParams.getDriver(), connParams.getUrl());
                 this.id = id;
 		replica = new ServiceReplica(id,this,this);                
-                View view = replicaContext.getCurrentView();
+                View view = replica.getReplicaContext().getCurrentView();
 		mProcessor.setCurrentView(view);
 		logger.info("Replica started");
 	}
@@ -57,33 +66,59 @@ public class Replica extends DefaultRecoverable {
         @Override
         public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs) {
 
+            //storeBatchSize.store(commands.length);
+            
+            //long init = System.nanoTime();
 
             byte [][] replies = new byte[commands.length][];
             for (int i = 0; i < commands.length; i++) {
-                if(msgCtxs != null && msgCtxs[i] != null) {
+                //if(msgCtxs != null && msgCtxs[i] != null) {
                 replies[i] = executeSingle(commands[i],msgCtxs[i]);
-                }
-                else executeSingle(commands[i],null);
+                //}
+                //else executeSingle(commands[i],null);
             }
+            //long latency = (System.nanoTime() - init) / 1000000;
+            //storeBatchLatency.store(latency);
 
+            /*if (storeBatchLatency.getCount() > 0 && storeBatchLatency.getCount() % 100 == 0) {
+                System.out.println("Replica // Average latency for " +  storeBatchLatency.getCount() + " RSM batches = " + storeBatchLatency.getAverage(false) + " ms ");
+                System.out.println("Replica // Standard desviation for " + storeBatchLatency.getCount() + " RSM batches = " + storeBatchLatency.getDP(false));
+                System.out.println("Replica // Maximum latency for " + storeBatchLatency.getCount() + " RSM batches = " + storeBatchLatency.getMax(false) + " ms ");
+                System.out.println("Replica // Median for " + storeBatchLatency.getCount() + " RSM batches = " + storeBatchLatency.getPercentile(0.5) + " ms ");
+                System.out.println("Replica // 90th for " + storeBatchLatency.getCount() + " RSM batches = " + storeBatchLatency.getPercentile(0.9) + " ms ");
+                System.out.println("Replica // 95th for " + storeBatchLatency.getCount() + " RSM batches = " + storeBatchLatency.getPercentile(0.95) + " ms ");
+                System.out.println("Replica // 99th for " + storeBatchLatency.getCount() + " RSM batches = " + storeBatchLatency.getPercentile(0.99) + " ms ");
+
+                System.out.println("\nReplica // Average size for " +  storeBatchSize.getCount() + " RSM batches = " + storeBatchSize.getAverage(false) + " messages ");
+                System.out.println("Replica // Standard desviation for " + storeBatchSize.getCount() + " RSM batches = " + storeBatchSize.getDP(false));
+                System.out.println("Replica // Maximum size for " + storeBatchSize.getCount() + " RSM batches = " + storeBatchSize.getMax(false) + " messages ");
+                System.out.println("Replica // Median for " + storeBatchSize.getCount() + " RSM batches = " + storeBatchSize.getPercentile(0.5) + " messages ");
+                System.out.println("Replica // 90th for " + storeBatchSize.getCount() + " RSM batches = " + storeBatchSize.getPercentile(0.9) + " messages ");
+                System.out.println("Replica // 95th for " + storeBatchSize.getCount() + " RSM batches = " + storeBatchSize.getPercentile(0.95) + " messages ");
+                System.out.println("Replica // 99th for " + storeBatchSize.getCount() + " RSM batches = " + storeBatchSize.getPercentile(0.99) + " messages ");
+
+            }*/
             return replies;
         }
                 
 	private byte[] executeSingle(byte[] command, MessageContext msgCtx) {
-		byte [] reply = null;
+            
+            msgCtx.getFirstInBatch().executedTime = System.nanoTime();
+                                    
+            byte [] reply = null;
 		
 		Message m = Message.getMessage(command);
 		Message replyMsg = null;
 		
-		logger.debug("---- Client: " + m.getClientId() + ", ordered, " + m.getClientId() + ", " + m.getContents());
+		logger.debug(":::: Client: " + m.getClientId() + ", #" + m.getOpSequence() + ", ordered, " + m.getContents());
 		
 		switch(m.getOpcode()) {
-		case OpcodeList.GET_STATE:
+		/*case OpcodeList.GET_STATE:
 			SMMessage smmsg = (SMMessage)m.getContents();
 			if(smmsg.getSender() != id)
 				stateManager.SMRequestDeliver(smmsg, true);
 			replyMsg = new Message(OpcodeList.STATE_REQUESTED, null, false, mProcessor.getMaster());
-			break;
+			break;*/
 		case OpcodeList.EXECUTE:
 			replyMsg = mProcessor.processExecute(m, m.getClientId());
 			break;
@@ -129,8 +164,50 @@ public class Replica extends DefaultRecoverable {
 		}
 		
 		reply = replyMsg.getBytes();
-		
-        return reply;
+
+                /*long fin = System.nanoTime();
+                execLatency.store((fin - msgCtx.getFirstInBatch().executedTime) / 1000000);
+                totalLatency.store((fin - msgCtx.getFirstInBatch().decisionTime) / 1000000);
+                deliveryLatency.store((msgCtx.getFirstInBatch().executedTime - msgCtx.getFirstInBatch().decisionTime) / 1000000);
+                posConsLatency.store((msgCtx.getFirstInBatch().deliveryTime - msgCtx.getFirstInBatch().decisionTime) / 1000000);
+
+                if (posConsLatency.getCount() > 0 && posConsLatency.getCount() % 100 == 0) {
+
+                    System.out.println("Replica // Average latency for " +  totalLatency.getCount() + " RSM total = " + totalLatency.getAverage(false) + " ms ");
+                    System.out.println("Replica // Standard desviation for " + totalLatency.getCount() + " RSM total = " + totalLatency.getDP(false));
+                    System.out.println("Replica // Maximum latency for " + totalLatency.getCount() + " RSM total = " + totalLatency.getMax(false) + " ms ");
+                    System.out.println("Replica // Median for " + totalLatency.getCount() + " RSM total = " + totalLatency.getPercentile(0.5) + " ms ");
+                    System.out.println("Replica // 90th for " + totalLatency.getCount() + " RSM total = " + totalLatency.getPercentile(0.9) + " ms ");
+                    System.out.println("Replica // 95th for " + totalLatency.getCount() + " RSM total = " + totalLatency.getPercentile(0.95) + " ms ");
+                    System.out.println("Replica // 99th for " + totalLatency.getCount() + " RSM total = " + totalLatency.getPercentile(0.99) + " ms ");
+                    
+                    System.out.println("Replica // Average latency for " +  posConsLatency.getCount() + " RSM pos-cons = " + posConsLatency.getAverage(false) + " ms ");
+                    System.out.println("Replica // Standard desviation for " + posConsLatency.getCount() + " RSM pos-cons = " + posConsLatency.getDP(false));
+                    System.out.println("Replica // Maximum latency for " + posConsLatency.getCount() + " RSM pos-cons = " + posConsLatency.getMax(false) + " ms ");
+                    System.out.println("Replica // Median for " + posConsLatency.getCount() + " RSM pos-cons = " + posConsLatency.getPercentile(0.5) + " ms ");
+                    System.out.println("Replica // 90th for " + posConsLatency.getCount() + " RSM pos-cons = " + posConsLatency.getPercentile(0.9) + " ms ");
+                    System.out.println("Replica // 95th for " + posConsLatency.getCount() + " RSM pos-cons = " + posConsLatency.getPercentile(0.95) + " ms ");
+                    System.out.println("Replica // 99th for " + posConsLatency.getCount() + " RSM pos-cons = " + posConsLatency.getPercentile(0.99) + " ms ");
+
+                    System.out.println("Replica // Average latency for " +  deliveryLatency.getCount() + " RSM delivery = " + deliveryLatency.getAverage(false) + " ms ");
+                    System.out.println("Replica // Standard desviation for " + deliveryLatency.getCount() + " RSM delivery = " + deliveryLatency.getDP(false));
+                    System.out.println("Replica // Maximum latency for " + deliveryLatency.getCount() + " RSM delivery = " + deliveryLatency.getMax(false) + " ms ");
+                    System.out.println("Replica // Median for " + deliveryLatency.getCount() + " RSM delivery = " + deliveryLatency.getPercentile(0.5) + " ms ");
+                    System.out.println("Replica // 90th for " + deliveryLatency.getCount() + " RSM delivery = " + deliveryLatency.getPercentile(0.9) + " ms ");
+                    System.out.println("Replica // 95th for " + deliveryLatency.getCount() + " RSM delivery = " + deliveryLatency.getPercentile(0.95) + " ms ");
+                    System.out.println("Replica // 99th for " + deliveryLatency.getCount() + " RSM delivery = " + deliveryLatency.getPercentile(0.99) + " ms ");
+
+                    System.out.println("Replica // Average latency for " +  execLatency.getCount() + " RSM exec = " + execLatency.getAverage(false) + " ms ");
+                    System.out.println("Replica // Standard desviation for " + execLatency.getCount() + " RSM exec = " + execLatency.getDP(false));
+                    System.out.println("Replica // Maximum latency for " + execLatency.getCount() + " RSM exec = " + execLatency.getMax(false) + " ms ");
+                    System.out.println("Replica // Median for " + execLatency.getCount() + " RSM exec = " + execLatency.getPercentile(0.5) + " ms ");
+                    System.out.println("Replica // 90th for " + execLatency.getCount() + " RSM exec = " + execLatency.getPercentile(0.9) + " ms ");
+                    System.out.println("Replica // 95th for " + execLatency.getCount() + " RSM exec = " + execLatency.getPercentile(0.95) + " ms ");
+                    System.out.println("Replica // 99th for " + execLatency.getCount() + " RSM exec = " + execLatency.getPercentile(0.99) + " ms ");
+
+                }*/
+
+                return reply;
 	}
 
 	@Override
@@ -139,38 +216,68 @@ public class Replica extends DefaultRecoverable {
 		Message reply = null;
 		Message m = Message.getMessage(command);
 
-		logger.debug("---- Client: " + m.getClientId() + ", unordered, " + m.getClientId() + ", " + m.getContents());
+		logger.debug("---- Client: " + m.getClientId() + ", #" + m.getOpSequence() + ", unordered, " + m.getContents());
 
 		switch(m.getOpcode()) {
 		case OpcodeList.EXECUTE:
+                    if (mProcessor.getMaster() == this.id) {
 			reply = mProcessor.processExecute(m, m.getClientId());
+                    }
+                    else {
+                        logger.debug("---- Client: " + m.getClientId() + ", enqueueing EXECUTE #" + m.getOpSequence());
+                        //mProcessor.getSessionManager().getConnManager(m.getClientId()).enqueueOperation(m);
+                        mProcessor.processOperation(m, m.getClientId());
+                    }
+                    break;
 		case OpcodeList.SET_FETCH_SIZE:
-			break;
+                    break;
 		case OpcodeList.EXECUTE_BATCH:
+                    if (mProcessor.getMaster() == this.id) {
 			reply = mProcessor.processExecuteBatch(m, m.getClientId());
-			break;
+                    }
+                    else {
+                        logger.debug("---- Client: " + m.getClientId() + ", enqueueing BATCH #" + m.getOpSequence());
+                        //mProcessor.getSessionManager().getConnManager(m.getClientId()).enqueueOperation(m);
+                        mProcessor.processOperation(m, m.getClientId());
+                    }
+                    break;
 		case OpcodeList.EXECUTE_QUERY:
+                    if (mProcessor.getMaster() == this.id) {
 			reply = mProcessor.processExecuteQuery(m, m.getClientId());
-			break;
+                    }
+                    else {
+                        logger.debug("---- Client: " + m.getClientId() + ", enqueueing QUERY #" + m.getOpSequence());
+                        //mProcessor.getSessionManager().getConnManager(m.getClientId()).enqueueOperation(m);
+                        mProcessor.processOperation(m, m.getClientId());
+                    }
+                    break;
 		case OpcodeList.EXECUTE_UPDATE:
+                    if (mProcessor.getMaster() == this.id) {
 			reply = mProcessor.processExecuteUpdate(m, m.getClientId());
-			break;
+                    }
+                    else {
+                        logger.debug("---- Client: " + m.getClientId() + ", enqueueing UPDATE #" + m.getOpSequence());
+                        //mProcessor.getSessionManager().getConnManager(m.getClientId()).enqueueOperation(m);
+                        mProcessor.processOperation(m, m.getClientId());
+                    }
+                    break;
 		case OpcodeList.COMMIT_AUTO:
-			reply = mProcessor.processAutoCommit(m, m.getClientId());
-			break;
+                    reply = mProcessor.processAutoCommit(m, m.getClientId());
+                    break;
 		case OpcodeList.MASTER_CHANGE:
-			reply = mProcessor.processMasterChange(m);
-			break;
+                    reply = mProcessor.processMasterChange(m);
+                    break;
 		default:
 			logger.debug("[Replica "+this.id+"] Unknown opcode received: " + m.getOpcode());
 		}
 		if(reply != null)
-			replyBytes = reply.getBytes(); 
+			replyBytes = reply.getBytes();
+                else replyBytes = new byte[0]; //bftsmart still has to reply with something
 		return replyBytes;
 	}
 
 	// Method used for TClouds demo
-	public byte[] getSnapshotH2() {
+	/*public byte[] getSnapshotH2() {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		String urlWithDB = connParams.getUrl() + connParams.getDatabase();
 		try {
@@ -184,20 +291,21 @@ public class Replica extends DefaultRecoverable {
 		List<DBConnectionParams> connParams = mProcessor.getConnections();
 		DatabaseState dbState = new DatabaseState(dump, null, connParams, mProcessor.getMaster());
 		return TOMUtil.getBytes(dbState);
-	}
+	}*/
 
 	@Override
 	public byte[] getSnapshot() { // To run with Postgres. It does not take the dump
-		byte[] dump = new byte[0];
+		/*byte[] dump = new byte[0];
 		logger.debug("Dump taken. Size: " + dump.length + " bytes.");
 		List<DBConnectionParams> connParams = mProcessor.getConnections();
 		DatabaseState dbState = new DatabaseState(dump, null, connParams, mProcessor.getMaster());
-		return TOMUtil.getBytes(dbState);
+		return TOMUtil.getBytes(dbState);*/
+                return new byte[0];
 	}
 	
 	@Override
 	public void installSnapshot(byte[] snapshot) {
-		StringBuffer dropStatements = new StringBuffer();
+		/*StringBuffer dropStatements = new StringBuffer();
 //		dropStatements.append("DROP TABLE IF EXISTS PUBLIC.USER CASCADE;\n");
 		
 		dropStatements.append("DROP TABLE IF EXISTS PUBLIC.REPORT CASCADE;\n");
@@ -250,10 +358,10 @@ public class Replica extends DefaultRecoverable {
 		//were opened when the dump was taken.
 		logger.debug("--- OPENING CONNECIONS");
 		mProcessor.restoreOpenConnections(dbParams, connParams.getDatabase());
-		logger.debug("--- OPEN");
+		logger.debug("--- OPEN");*/
 	}
 
-	@Override
+	/*@Override
 	public StateManager getStateManager() {
 		if(stateManager == null)
 			stateManager = new DatabaseStateManager();
@@ -272,6 +380,6 @@ public class Replica extends DefaultRecoverable {
 		int returnValue = super.setState(recvState);
 		mProcessor.setInstallingState(false);
 		return returnValue;
-	}
+	}*/
 
 }

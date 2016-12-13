@@ -8,6 +8,9 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import lasige.steeldb.comm.Message;
 import lasige.steeldb.statemanagement.DBConnectionParams;
@@ -16,12 +19,14 @@ public class SessionManager {
 
 	private HashMap <Integer, ConnManager> clientMap;
 	private String urlBase;
+        
+        private org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger("steeldb_processor");
 
 	public SessionManager(String url) {
 		this.urlBase = url;
 		clientMap = new HashMap<Integer,ConnManager>();
 	}
-
+               
 	/**
 	 * Return a manager to the SQLConnection object.
 	 * The connection manager acts as a gateway preventing the
@@ -33,8 +38,9 @@ public class SessionManager {
 		synchronized(this) {
 			cManager = clientMap.get(clientId);
 			if(cManager == null) {
-				cManager = new ConnManager();
+				cManager = new ConnManager(clientId);
 				clientMap.put(clientId, cManager);
+                                cManager.start();
 			}
 		}
 		return cManager;
@@ -53,7 +59,7 @@ public class SessionManager {
 	protected Queue<Message> getOperations(int clientId) {
 		ConnManager cManager = clientMap.get(clientId);
 		Queue<Message> queue = cManager.getTransactionQueue();
-		cManager.clearTransaction();
+		//cManager.clearTransaction();
 		return queue;	
 	}
 
@@ -62,8 +68,9 @@ public class SessionManager {
 		synchronized(this) {
 			cManager = clientMap.get(clientId);
 			if(cManager == null) {
-				cManager = new ConnManager();
+				cManager = new ConnManager(clientId);
 				clientMap.put(clientId, cManager);
+                                cManager.start();
 			}
 		}
 		boolean connected = cManager.connect(urlBase + database, user, pass);

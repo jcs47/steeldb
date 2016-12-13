@@ -13,7 +13,7 @@ import javax.sql.RowSet;
 
 import lasige.steeldb.jdbc.BFTRowSet;
 
-public class Message implements Serializable {
+public class Message implements Serializable, Comparable {
 	
 	private static final long serialVersionUID = -137793546194980087L;
 	
@@ -27,6 +27,8 @@ public class Message implements Serializable {
 	private int clientId;
 	protected int operationId;
 	protected final int master;
+        protected long opSequence;
+        protected long lastCommitedTransId = -1;
 	
 	public Message(int opcode, Object content, boolean unordered, int master) {
 		this.opcode = opcode;
@@ -132,9 +134,11 @@ public class Message implements Serializable {
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + ((content == null) ? 0 : content.hashCode());
-		result = prime * result + opcode;
-		result = prime * result + (unordered ? 1231 : 1237);
+		//result = prime * result + ((content == null) ? 0 : content.hashCode());
+		//result = prime * result + opcode;
+		//result = prime * result + (unordered ? 1231 : 1237);
+                result = prime * result + clientId;
+                result = prime * result + (int) opSequence;
 		return result;
 	}
 
@@ -145,15 +149,22 @@ public class Message implements Serializable {
 		if(!(obj instanceof Message))
 			return false;
 		Message other = (Message) obj;
+                if (other.content == null) {
+			if (content != null)
+				return false;
+		}
 		if (content == null) {
 			if (other.content != null)
 				return false;
-		} else if (!content.equals(other.content))
+		}
+                if (!content.equals(other.content))
 			return false;
 		if (opcode != other.opcode)
 			return false;
 		if (unordered != other.unordered)
 			return false;
+                if (opSequence != other.opSequence)
+                        return false;
 		return true;
 	}
 
@@ -206,5 +217,28 @@ public class Message implements Serializable {
 	public int getMaster() {
 		return master;
 	}
+
+        public long getOpSequence() {
+            return opSequence;
+        }
+
+        public void setOpSequence(long opSequence) {
+            this.opSequence = opSequence;
+        }
+
+        public long getLastCommitedTransId() {
+            return lastCommitedTransId;
+        }
+
+        public void setLastCommitedTransId(long transId) {
+            this.lastCommitedTransId = transId;
+        }
+        
+        @Override
+        public int compareTo(Object o) {
+            Message m = ((Message) o);
+            if (this.clientId != m.clientId) throw new RuntimeException("Not from the same client");
+            return Long.compare(this.opSequence, m.opSequence);
+        }
 }
 

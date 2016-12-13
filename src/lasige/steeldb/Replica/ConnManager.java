@@ -5,8 +5,9 @@ import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.LinkedList;
 import java.util.Queue;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.logging.Level;
 //import java.util.concurrent.CountDownLatch;
 
 import org.apache.log4j.Logger;
@@ -26,8 +27,9 @@ import lasige.steeldb.statemanagement.DBConnectionParams;
  * ordering of the messages to be executed in FIFO order.
  */
 
-public class ConnManager {
+public class ConnManager extends Thread {
 	
+        private int clientId;
 	private Connection conn;
 	private Queue<Message> transQueue;
 	private DBConnectionParams login;
@@ -39,13 +41,16 @@ public class ConnManager {
 //	private CountDownLatch connectedLatch;
 	
 	private static final int CONNECTION_TIMEOUT = 5000;
+        private Object queueSync;
 	
-    private Logger logger = Logger.getLogger("steeldb_replica");
+        private Logger logger = Logger.getLogger("steeldb_processor");
 	
-	protected ConnManager() {
-		transQueue = new LinkedList<Message>();
+	protected ConnManager(int clientId) {
+                this.clientId = clientId;
+		transQueue = new PriorityBlockingQueue<>();
 		readWriteTransaction = false;
 		commitingTransaction = false;
+                queueSync = new Object();
 //		connectedLatch = new CountDownLatch(1);
 	}
 	
@@ -66,7 +71,13 @@ public class ConnManager {
 	}
 		
 	public void enqueueOperation(Message m) {
-		transQueue.offer(m);
+            
+                synchronized(queueSync) {
+                    
+                    transQueue.offer(m);
+                    logger.debug("Offered message #" + m.getOpSequence() + " from client " + m.getClientId());
+                    queueSync.notify();
+                }
 	}
 
 	
@@ -77,9 +88,39 @@ public class ConnManager {
 	public Queue<Message> getTransactionQueue() {
 		return transQueue;
 	}
+                
+        public Message[] pollMessages(long firstOpSequence, int numMessages) {
+            
+            if (firstOpSequence == -1) return new Message[0];
+            Message[] ret = new Message[numMessages];
+            
+            synchronized(queueSync) {
+            
+                for (int i = 0; i < numMessages; i++) {
 
+                    long sequence = firstOpSequence + i;
+                    while (transQueue.peek() == null ||
+                            transQueue.peek().getOpSequence() != sequence) {
+                        logger.debug("---- Waiting for operation #" + sequence + 
+                                 " from client " + clientId + (transQueue.peek() != null ? " currently at #" + transQueue.peek().getOpSequence() : ""));
+                        try {
+                            queueSync.wait();
+                        } catch (InterruptedException ex) {
+                            java.util.logging.Logger.getLogger(ConnManager.class.getName()).log(Level.SEVERE, null, ex);
+                        }
+                    }
+        
+                    ret[i] = transQueue.poll();
+                    logger.debug("Polled message #" + ret[i].getOpSequence() + " from client " + ret[i].getClientId());
+
+                }
+            }
+            
+            return ret;
+        }
+        
 	public void clearTransaction() {
-		transQueue = new LinkedList<Message>();
+		transQueue = new PriorityBlockingQueue<>();
 	}
 
 	protected void closeConn() throws SQLException {
@@ -175,7 +216,7 @@ public class ConnManager {
 	 * operation list and set the flags to the original state.
 	 */
 	protected void reset() {
-		transQueue = new LinkedList<Message>();
+		//transQueue = new PriorityBlockingQueue<>();
 		readWriteTransaction = false;
 		commitingTransaction = false;
 		aborted = false;

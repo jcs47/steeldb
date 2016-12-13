@@ -275,8 +275,10 @@ public class MessageHandlerTrustedMaster {
 	 * @return The commit request message
 	 */
 	private Message prepareFinishTransactionRequest(int opcode) {
-		FinishTransactionRequest finishReq = new FinishTransactionRequest(resHashes, operations);
-		Message message;
+		//FinishTransactionRequest finishReq = new FinishTransactionRequest(resHashes, operations);
+		FinishTransactionRequest finishReq = new FinishTransactionRequest(resHashes, (operations.peekFirst() != null ? operations.peekFirst().getOpSequence() : -1));
+
+                Message message;
 		if(opcode == OpcodeList.ROLLBACK_SEND) {
 			boolean masterChanged = oldMaster != master;
 			RollbackRequest req = new RollbackRequest(masterChanged, oldMaster, finishReq);

@@ -14,6 +14,10 @@ import org.apache.log4j.Logger;
 
 import bftsmart.reconfiguration.views.View;
 import bftsmart.tom.util.TOMUtil;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 //import bftsmart.util.Printer;
 
 import lasige.steeldb.Replica.normalizaton.FirebirdNormalizer;
@@ -33,12 +37,20 @@ import lasige.steeldb.statemanagement.DBConnectionParams;
 public class MessageProcessor {
 	private int replicaId;
 	private SessionManager sm;
+
+        public SessionManager getSessionManager() {
+            return sm;
+        }
+        
 	private int master;
 	private Normalizer norm;
 	private View currentView;
 	private long lastMasterChange;
 	private boolean installingState;
-	
+        private ConcurrentHashMap<Integer, LinkedList<byte[]>> results;
+        private ConcurrentHashMap<Integer, SpeculativeThread> threads;
+        private long lastCommitedTransId = 0;
+                
     private static Logger logger = Logger.getLogger("steeldb_processor");
 
     public MessageProcessor(int id, String driver, String url) {
@@ -47,8 +59,79 @@ public class MessageProcessor {
 		this.sm = new SessionManager(url);
 		this.master = 0;
 		installingState = false;
+                results = new ConcurrentHashMap<>();
+                threads = new ConcurrentHashMap<>();
 	}
 	
+        protected void processOperation(Message m, int clientId) {
+            
+                ConnManager connManager = sm.getConnManager(clientId);
+                
+                /*if (m.getOpcode() != OpcodeList.COMMIT && m.getOpcode() != OpcodeList.ROLLBACK_SEND)
+                    connManager.enqueueOperation(m);
+                
+                if (m.getLastCommitedTransId() != -1) {
+                    
+                    Message[] op = connManager.pollMessages(m.getOpSequence() - 1 , 1);
+                    sm.waitforCommit(m.getLastCommitedTransId(), clientId);
+                    byte[] replyHash = executeOperation(op[0], clientId);
+                    results.get(clientId).add(replyHash);
+                }*/
+                
+                SpeculativeThread sp = threads.get(clientId);
+                if (sp == null) {
+                    sp = new SpeculativeThread(clientId, m.getOpSequence());
+                    sp.start();
+                    threads.put(clientId, sp);
+                }
+                        
+                connManager.enqueueOperation(m);
+        }
+        
+        protected byte[] executeOperation(Message m, int clientId) {
+            
+                Message result = null;
+                switch(m.getOpcode()) {
+                    case OpcodeList.EXECUTE:
+                            result = processExecute(m,clientId);
+                            break;
+                    case OpcodeList.EXECUTE_BATCH:
+                            result = processExecuteBatch(m, clientId);
+                            break;
+                    case OpcodeList.EXECUTE_QUERY:
+                            result = processExecuteQuery(m, clientId);
+                            break;
+                    case OpcodeList.EXECUTE_UPDATE:
+                            result = processExecuteUpdate(m, clientId);
+                            break;
+                    default:
+                            result = new Message(OpcodeList.COMMIT_ERROR, new SQLException("Unknown op: " + m.getOpcode()), false, master);
+                    }
+                Object replyContent = result.getContents();
+                byte[] replyBytes = null;
+                replyBytes = TOMUtil.getBytes(replyContent);
+                return TOMUtil.computeHash(replyBytes);            
+        }
+        
+        public void finishedTransaction(int clientId) {
+
+            this.lastCommitedTransId++;
+            logger.debug("---- Client " + clientId + " finished commit #" + lastCommitedTransId + ", notifying spec threads");
+
+            Collection<SpeculativeThread> specs = threads.values();
+            
+            for (SpeculativeThread s : specs) {
+            
+                synchronized(s) {
+                    s.notify();
+                }
+            }
+     }
+        
+        public Long getLastCommitedTrans() {
+            return lastCommitedTransId;
+        }
+         
 	protected Message processExecute(Message m, int clientId) {
 		ConnManager connManager = sm.getConnManager(clientId);
 		String sql = (String)m.getContents();
@@ -73,7 +156,9 @@ public class MessageProcessor {
 			reply = new Message(OpcodeList.EXECUTE_ERROR, sqle,false, master);
 		}
                 logger.debug("!---- Client: " + clientId + ", EXECUTE REPLY: " + reply.toString());
-		return reply;
+		if (this.master == this.replicaId /*&& reply.getOpcode() == OpcodeList.EXECUTE_OK*/)
+                    reply.setLastCommitedTransId(getLastCommitedTrans());
+                return reply;
 
 
 	}
@@ -102,7 +187,9 @@ public class MessageProcessor {
 			reply = new Message(OpcodeList.EXECUTE_BATCH_ERROR, sqle, false, master);
 		}
                 logger.debug("!---- Client: " + clientId + ", BATCH REPLY: " + reply.toString());
-		return reply;
+                if (this.master == this.replicaId /*&& reply.getOpcode() == OpcodeList.EXECUTE_BATCH_OK*/)
+                    reply.setLastCommitedTransId(getLastCommitedTrans());
+                return reply;
 	}
 
 	protected Message processExecuteQuery(Message m, int clientId) {
@@ -156,7 +243,9 @@ public class MessageProcessor {
 			reply = new Message(OpcodeList.EXECUTE_QUERY_ERROR, sqle, true, master);
 		}
                 logger.debug("!---- Client: " + clientId + ", QUERY REPLY: " + reply.toString());
-		return reply;
+		if (this.master == this.replicaId /*&& reply.getOpcode() == OpcodeList.EXECUTE_QUERY_OK*/)
+                    reply.setLastCommitedTransId(getLastCommitedTrans());
+                return reply;
 
 	}
 
@@ -209,7 +298,9 @@ public class MessageProcessor {
 			reply = new Message(OpcodeList.EXECUTE_UPDATE_ERROR, sqle, false, master);
 		}
                 logger.debug("!---- Client: " + clientId + ", UPDATE REPLY: " + reply.toString());
-		return reply;
+		if (this.master == this.replicaId /*&& reply.getOpcode() == OpcodeList.EXECUTE_UPDATE_OK*/)
+                    reply.setLastCommitedTransId(getLastCommitedTrans());
+                return reply;
 	}
 
 	protected Message processLogin(Message m, int clientId) {
@@ -220,7 +311,8 @@ public class MessageProcessor {
 		String password = lr.getPassword(replicaId);
 		Message reply;
 		if(sm.connect(clientId, database, user, password)) {
-			reply = new Message(OpcodeList.LOGIN_OK, null, false, master);
+                        results.put(clientId, new LinkedList<>());
+                        reply = new Message(OpcodeList.LOGIN_OK, null, false, master);
 		} else {
 			reply = new Message(OpcodeList.LOGIN_ERROR, null, false, master);
 		}
@@ -251,15 +343,16 @@ public class MessageProcessor {
 	protected Message processCommit(Message m, int clientId) {
 		FinishTransactionRequest finishReq = (FinishTransactionRequest) m.getContents();
 		LinkedList<byte[]> resHashes = finishReq.getResHashes();
-		LinkedList<Message> operations = finishReq.getOperations();
+		//LinkedList<Message> operations = finishReq.getOperations();
 		Message reply = null;
-		if(operations != null && operations.size() > 0) {
+		if(resHashes != null && resHashes.size() > 0) {
 			reply = processFinishTransaction(m, clientId, OpcodeList.COMMIT);
 		}
 		if(reply == null || reply.getOpcode() == OpcodeList.COMMIT_OK){
 			try {
-				ConnManager connManager = sm.getConnManager(clientId);
-				connManager.commit();
+                                ConnManager connManager = sm.getConnManager(clientId);
+                                finishedTransaction(clientId); //increment transaction ID
+                                connManager.commit();
 				if(reply == null)
 					reply = new Message(OpcodeList.COMMIT_OK, null, false, master);
 			} catch (SQLException sqle) {
@@ -296,43 +389,38 @@ public class MessageProcessor {
 		if(this.master != this.replicaId || installingState) {
 			FinishTransactionRequest finishReq = (FinishTransactionRequest) m.getContents();
 			LinkedList<byte[]> resHashes = finishReq.getResHashes();
-			LinkedList<Message> operations = finishReq.getOperations();
-			if(operations.size() != resHashes.size()) {
-				logger.error("Operations size differs from results: " + operations.size() + "," + resHashes.size());
-			}
-//			Queue<Message> ops = operations;
-			LinkedList<byte[]> results = new LinkedList<byte[]>();
+
 			connManager.setCommitingTransaction(true);
+
+                        /*Message[] operations = connManager.pollMessages(finishReq.getFirstOpSequence(), (int) (m.getOpSequence() - finishReq.getFirstOpSequence()));
+
 			for(Message msg: operations) {
-				switch(msg.getOpcode()) {
-				case OpcodeList.EXECUTE:
-					reply = processExecute(msg,clientId);
-					break;
-				case OpcodeList.EXECUTE_BATCH:
-					reply = processExecuteBatch(msg, clientId);
-					break;
-				case OpcodeList.EXECUTE_QUERY:
-					reply = processExecuteQuery(msg, clientId);
-					break;
-				case OpcodeList.EXECUTE_UPDATE:
-					reply = processExecuteUpdate(msg, clientId);
-					break;
-				default:
-					reply = new Message(OpcodeList.COMMIT_ERROR, new SQLException("Unknown op: " + msg.getOpcode()), false, master);
-				}
-				Object replyContent = reply.getContents();
-				byte[] replyBytes = null;
-				replyBytes = TOMUtil.getBytes(replyContent);
-				byte[] replyHash = TOMUtil.computeHash(replyBytes);
+
+                                byte[] replyHash = executeOperation(msg, clientId);
 				results.add(replyHash);
-			}
-			if(!compareHashes(resHashes, results)){
-				logger.debug("---- Client: " + clientId + ", result hashes don't match. Results.size(): " + results.size() + ", resHashes.size(): " + resHashes.size() + ", ops.size()" + operations.size());
+			}*/
+
+                        SpeculativeThread sp = threads.get(clientId);
+                        if (sp != null) {
+                            logger.debug("---- Client: " + clientId + ", inserting commit/rollback #" + m.getOpSequence());
+                            connManager.enqueueOperation(m); // force last op to execute
+                            logger.debug("---- Client: " + clientId + ", waiting for execution of op #" + m.getOpSequence());
+                            sp.waitForOps(m.getOpSequence()); // wait for all ops to complete
+                            logger.debug("---- Client: " + clientId + ", resuming spec thread ");
+                            sp.resumeSpec();
+                        }
+
+                        logger.debug("---- Client: " + clientId + ", comparing hashes");
+                        
+			if(!compareHashes(resHashes, results.get(clientId))){
+				logger.debug("---- Client: " + clientId + ", result hashes don't match. Results.size(): " + results.size() + ", resHashes.size(): " + resHashes.size());
 				reply = new Message(opcodeError, new SQLException("Results hashes don't match"), true, master);
+                                //reply = new Message(opcodeOK, null, false, master);
 			} else {
 				logger.debug("---- Client: " + clientId + ", result hashes match. Results.size(): " + results.size());
 				reply = new Message(opcodeOK, null, false, master);
 			}
+                        results.get(clientId).clear();
 		} else {
 			reply = new Message(opcodeOK, null, false, master);
 		}
@@ -360,6 +448,7 @@ public class MessageProcessor {
 			if(rollReq.getOldMaster() == replicaId) {
 				try {
 					logger.debug("---- Client: " + clientId + ", rollbacking transaction in the old master");
+                                        //finishedTransaction(clientId); //increment transaction ID
 					connManager.rollback();
                                         logger.debug("---- Client: " + clientId + ", rollbacked transaction in the old master");
 				} catch (SQLException sqle) {
@@ -377,15 +466,25 @@ public class MessageProcessor {
                     
                         //Is it really necessary to execute the updates if the intention is to perform a rollback??
 			FinishTransactionRequest finishReq = rollReq.getFinishReq();
-			if(finishReq.getOperations() != null && finishReq.getOperations().size() > 0) {
+			if(finishReq.getResHashes() != null && finishReq.getResHashes().size() > 0) {
+                                long opSeq = m.getOpSequence();
+                                long commitId = m.getLastCommitedTransId();
 				m = new Message(OpcodeList.ROLLBACK_SEND, rollReq.getFinishReq(), false, master);
+                            try {
+                                m.setClientId(clientId);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                                m.setLastCommitedTransId(commitId);
+                                m.setOpSequence(opSeq);
 				reply = processFinishTransaction(m, clientId, OpcodeList.ROLLBACK_SEND);
 			}
 			if(reply == null || reply.getOpcode() == OpcodeList.ROLLBACK_OK) {
 				try {
-					ConnManager connManager = sm.getConnManager(clientId);
+                                        ConnManager connManager = sm.getConnManager(clientId);
                                         logger.debug("---- Client: " + clientId + ", rollbacking transaction");
-					connManager.rollback();
+                                        //finishedTransaction(clientId); //increment transaction ID
+                                        connManager.rollback();
                                         logger.debug("---- Client: " + clientId + ", rollbacked transaction");
 					if(reply == null)
 						reply = new Message(OpcodeList.ROLLBACK_OK, null, false, master);
@@ -506,6 +605,11 @@ public class MessageProcessor {
 		logger.debug("---- Client: " + clientId + ", CLOSE");
 		Message reply;
 		try {
+                        results.get(clientId).clear();
+                        
+                        SpeculativeThread sp = threads.remove(clientId);
+                        if (sp != null) sp.shutDown();
+                        
 			sm.close(clientId);
 			reply = new Message(OpcodeList.CLOSE_OK, null, true, master);
 		} catch (SQLException sqle) {
@@ -522,7 +626,7 @@ public class MessageProcessor {
 		else
 			return new NoNormalizer();
 	}
-	
+        
 	/**
 	 * Gets from the session manager the open read-write transactions.
 	 * @return A map with the client id and the list of operations executed
@@ -606,4 +710,131 @@ public class MessageProcessor {
 	protected void setInstallingState(boolean installing) {
 		this.installingState = installing;
 	}
+
+        private class SpeculativeThread extends Thread {
+
+                private final int clientId;
+                private long nextOp;
+                private boolean doWork;
+                private boolean paused;
+                private final Object opSync;
+                private final Object pauseSync;
+                
+                private SpeculativeThread(int clientId, long initOp) {
+                    
+                    this.clientId = clientId;
+                    this.nextOp = initOp;
+                    this.doWork = true;                    
+                    this.paused = false;                    
+                    this.opSync = new Object();
+                    this.pauseSync = new Object();
+
+                }
+
+                @Override
+                public void run() {
+
+                    while (this.doWork) {
+
+                        ConnManager connManager = sm.getConnManager(this.clientId);
+                        
+                        if (!connManager.isConnected()) { // avoid a null pointer exception
+                            try {
+                                Thread.sleep(100);
+                                continue;
+                            } catch (InterruptedException ex) {
+                                java.util.logging.Logger.getLogger(MessageProcessor.class.getName()).log(Level.SEVERE, null, ex);
+                            }
+                        }
+
+                        // this synchronization is needed because ConnManager.pollMessage() is blocking
+                        // and can lead to a deadlock between this thread and the waitForOps command
+                        synchronized(pauseSync) {
+                            while (this.paused) {
+                                logger.debug("----[SpecThread] Client #" + this.clientId + " paused spec thread via commit/rollback op");
+                                try {
+                                    pauseSync.wait();
+                                } catch (InterruptedException ex) {
+                                    java.util.logging.Logger.getLogger(MessageProcessor.class.getName()).log(Level.SEVERE, null, ex);
+                                }
+
+                            }
+                        }
+                        
+                        synchronized(opSync) {
+                        
+                            logger.debug("----[SpecThread] Client #" + this.clientId + " waiting for operations #" + this.nextOp + " and #" + (this.nextOp + 1));
+                            Message[] op = connManager.pollMessages(this.nextOp , 2);
+
+                            logger.debug("----[SpecThread] Client #" + this.clientId + " obtained operations #" + this.nextOp + " and #" + (this.nextOp + 1));
+                            logger.debug("----[SpecThread] Client #" + this.clientId + " waiting for commit #" + op[1].getLastCommitedTransId());
+
+                            waitforCommit(op[1].getLastCommitedTransId(), this.clientId);
+                            logger.debug("----[SpecThread] Client #" + this.clientId + " reached commit #" + op[1].getLastCommitedTransId());
+
+                            if (op[1].getOpcode() != OpcodeList.ROLLBACK_SEND) {
+
+                                byte[] replyHash = executeOperation(op[0], this.clientId);
+                                results.get(this.clientId).add(replyHash);       
+                                logger.debug("----[SpecThread] Client #" + this.clientId + " executed op #" + op[0].getOpSequence());
+                            }
+                            else {
+                                logger.debug("----[SpecThread] Client #" + this.clientId + " transaction is rolling back after op #" + op[0].getOpSequence() + ", skipping execution");                                
+                            }
+                            
+                            if (op[1].getOpcode() != OpcodeList.COMMIT && op[1].getOpcode() != OpcodeList.ROLLBACK_SEND) {
+                                connManager.enqueueOperation(op[1]);
+                                this.nextOp++;
+                            }
+                            else {
+                                this.nextOp = (op[1].getOpSequence() + 1) ;
+                                this.paused = true;
+                            }
+                            opSync.notify();
+                        }
+
+                    }
+                }
+                
+                public void waitforCommit(long transId, int clientId) {
+                    synchronized(this) {
+                        while (transId > lastCommitedTransId) {
+
+                                logger.debug("---- Client " + clientId + " is waiting for commit #" + transId + " (currently at #" + lastCommitedTransId + ")");
+                            try {
+                                this.wait();
+                            } catch (InterruptedException ex) {
+                                java.util.logging.Logger.getLogger(SessionManager.class.getName()).log(Level.SEVERE, null, ex);
+                            }
+                        }
+                    }
+                    logger.debug("---- Client " + clientId + " reached commit #" + lastCommitedTransId + " (currently at #" + lastCommitedTransId + ")");
+                }
+                public void waitForOps(long sequence) {
+                    synchronized(opSync) {
+                        try {
+                            while (this.nextOp < sequence) {
+                                logger.debug("---- Client #" + this.clientId + " waiting to reach op sequence #" + sequence);
+                                opSync.wait();
+
+                            }
+                        } catch (InterruptedException ex) {
+                            java.util.logging.Logger.getLogger(MessageProcessor.class.getName()).log(Level.SEVERE, null, ex);
+                        }
+                    }
+                    logger.debug("---- Client #" + clientId + " reached op sequence #" + sequence);
+                }
+                
+                public void resumeSpec() {
+                    synchronized(pauseSync) {
+                        paused = false; 
+                        pauseSync.notify();
+                    }
+                    logger.debug("----[SpecThread] Client #" + this.clientId + " resumed spec thread");
+                }
+                public void shutDown() {
+                        logger.debug("---- Client #" + clientId + " shuting down spec thread");
+                    doWork = false;
+                }
+        }
 }
