@@ -262,6 +262,13 @@ public class MessageHandler {
 				return 0;
                         else if (m1.getContents() == null && m2.getContents() == null)
                                 return 0;
+                        else if (m1.getContents() instanceof Exception && m2.getContents() instanceof Exception) {
+                            
+                            Exception ex1 = (Exception) m1.getContents();
+                            Exception ex2 = (Exception) m2.getContents();
+                            
+                            return (ex1.getMessage().equals(ex2.getMessage()) ? 0 : -1);
+                        }
 			else {
 				System.out.println("contents not matching: " + m1.getOpcode() + "," + m1.getContents() + "," + m2.getContents());
 				return -1;
