@@ -50,7 +50,7 @@ public class SteelDBListener implements ReplyListener {
 		if(response != null)
 			return response;
 		try {
-			if (!this.sm.tryAcquire(30, TimeUnit.SECONDS)) {
+			if (!this.sm.tryAcquire(60, TimeUnit.SECONDS)) {
 				logger.error("Client " + clientID + " couldn't get reply from server");
 				return null;
 			}
