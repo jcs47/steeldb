@@ -254,9 +254,18 @@ public class MessageHandler {
             if(proxy.getViewManager().getCurrentViewN() > 1 && !transactionReadOnly && !autoCommit && opCode != OpcodeList.COMMIT && opCode != OpcodeList.ROLLBACK_SEND
                             && opCode != OpcodeList.COMMIT_AUTO	&& opCode != OpcodeList.CLOSE
                             && opCode != OpcodeList.LOGIN_SEND && opCode != OpcodeList.GET_DB_METADATA) {
+                
+                // An exception ocurring at the master might not deterministically occur in the slaves, hence no use of computing the hash
+                // Moreover, since the transaction must be rollbacked anyway (at least in postgres), there is no point in calculating the hash
+                //if (replyContent instanceof SQLException) { 
+                //    resHashes.add(new byte[0]);
+                //}
+                //else {
                     byte[] replyBytes = TOMUtil.getBytes(replyContent);
                     byte[] replyHash = TOMUtil.computeHash(replyBytes);
                     resHashes.add(replyHash);
+                //}
+                    
             }
             return reply;
 	}
@@ -372,6 +381,15 @@ public class MessageHandler {
                 //FinishTransactionRequest finishReq = new FinishTransactionRequest(null, (operations.peekFirst() != null ? operations.peekFirst().getOpSequence() : -1));
 		Message message;
 		if(opcode == OpcodeList.ROLLBACK_SEND) {
+                    
+                        // The transaction might be rollingback due to an exception ocurring at the master,
+                        // which might not deterministically occur in the slaves, hence no use of verifying
+                        // the hash of the last operation of such rollbacking transaction
+                        if (finishReq.getResHashes().size() > 0) {
+                            finishReq.getResHashes().removeLast();
+                            finishReq.getResHashes().add(new byte[0]);
+                        }
+                        
 			boolean masterChanged = oldMaster != master;
 			RollbackRequest req = new RollbackRequest(masterChanged, oldMaster, finishReq);
 			message = new Message(opcode, req, false, master);

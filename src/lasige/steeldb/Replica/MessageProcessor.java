@@ -15,10 +15,8 @@ import org.apache.log4j.Logger;
 import bftsmart.reconfiguration.views.View;
 import bftsmart.tom.util.TOMUtil;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
-//import bftsmart.util.Printer;
 
 import lasige.steeldb.Replica.normalizaton.FirebirdNormalizer;
 import lasige.steeldb.Replica.normalizaton.NoNormalizer;
@@ -779,6 +777,10 @@ public class MessageProcessor {
                                 logger.debug("----[SpecThread] Client #" + this.clientId + " executed op #" + op[0].getOpSequence());
                             }
                             else {
+                                
+                                // since the transaction might be rolling back due to a conflict at the master,
+                                // the operation cannot safely execute. Moreover, the hash cannot be deterministically verified either
+                                results.get(this.clientId).add(new byte[0]);       
                                 logger.debug("----[SpecThread] Client #" + this.clientId + " transaction is rolling back after op #" + op[0].getOpSequence() + ", skipping execution");                                
                             }
                             
