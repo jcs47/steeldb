@@ -30,9 +30,6 @@ public class SteelDBListener implements ReplyListener {
 
 	private Logger logger;
 
-	public SteelDBListener(int id, byte[] request, Comparator<byte[]> comparator, Extractor extractor) {
-		this(id, request, comparator, extractor, 0);
-	}
 
 	public SteelDBListener(int id, byte[] request, Comparator<byte[]> comparator, Extractor extractor, int master) {
 		this.comparator = comparator;

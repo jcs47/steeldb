@@ -41,11 +41,11 @@ public class MessageProcessor {
 	
     private static Logger logger = Logger.getLogger("steeldb_processor");
 
-    public MessageProcessor(int id, String driver, String url) {
+    public MessageProcessor(int id, int master, String driver, String url) {
 		this.replicaId = id;
 		this.norm = getNormalizer(driver);
 		this.sm = new SessionManager(url);
-		this.master = 0;
+		this.master = master;
 		installingState = false;
 	}
 	

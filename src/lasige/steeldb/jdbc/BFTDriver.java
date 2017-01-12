@@ -48,11 +48,23 @@ public class BFTDriver implements java.sql.Driver {
 		String[] urlData = url.split(";");
 		if(!urlData[0].equalsIgnoreCase("jdbc:bftdriver"))
 			return null;
-		int replicaCount = urlData.length - 1;
-		Vector<String> databases = new Vector<String>(replicaCount);
+		Vector<String> databases = new Vector<String>();
+                int master = 0;
+                
 		for(int i = 1; i < urlData.length; i++) {
+                    
+                    if (urlData[i].contains("=")) {
+        		String[] urlParam = urlData[i].split("=");
+                        if (urlParam[0].equalsIgnoreCase("master"))
+                            master = Integer.parseInt(urlParam[1]);
+                    }
+                    else {
 			databases.add(urlData[i]);
+                    }
 		}
+
+                int replicaCount = databases.size();
+
 		String[] userList = props.getProperty("user").split(";");
 		String[] passList = props.getProperty("password").split(";");
 		if(userList.length != replicaCount || passList.length != replicaCount)
@@ -66,9 +78,9 @@ public class BFTDriver implements java.sql.Driver {
 		LoginRequest lr = new LoginRequest(databases,users,passwords);
 		
 		//create mHandler
-		MessageHandler mHandler =  new MessageHandler(clientId.incrementAndGet());
+		MessageHandler mHandler =  new MessageHandler(clientId.incrementAndGet(), master);
 		//do the login proccess
-		Message login = new Message(OpcodeList.LOGIN_SEND, lr, false, 0);
+		Message login = new Message(OpcodeList.LOGIN_SEND, lr, false, master);
 		Message reply = mHandler.send(login, true);
 		if(reply.getOpcode() != OpcodeList.LOGIN_OK)
 			throw new SQLException("Error establishing connection:"

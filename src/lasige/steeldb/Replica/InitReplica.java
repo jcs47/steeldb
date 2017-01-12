@@ -9,7 +9,7 @@ public class InitReplica {
 
 	public static void main(String[] args) {
 		System.out.println("CHARSET: " + Charset.defaultCharset().toString() + ", ENCODING: " + System.getProperty("file.encoding"));
-		if (args.length != 1) {
+		if (args.length < 1) {
 			usage();
 		}
 		Properties config = new Properties();
@@ -38,11 +38,13 @@ public class InitReplica {
 		
 		int id = Integer.parseInt(config.getProperty("replica.id"));
 		
-		new Replica(id, config);
+                int master = (args.length > 1 ? Integer.parseInt(args[1]) : 0);
+                
+		new Replica(id, master, config);
 	}
 
 	public static void usage() {
-		System.out.println("Use: java lasige.steeldb.Server <configfilename>.properties");
+		System.out.println("Use: java lasige.steeldb.Server <configfilename>.properties [master id]");
 		System.exit(-1);
 	}
 }

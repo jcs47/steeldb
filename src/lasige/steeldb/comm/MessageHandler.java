@@ -40,8 +40,12 @@ public class MessageHandler {
 	
         private Logger logger = Logger.getLogger("steeldb_client");
 	
-	public MessageHandler(int clientId) {
+	public MessageHandler(int clientId, int master) {
 		clientId = FIRST_CLIENT_ID + clientId;
+		this.master = master;
+                this.oldMaster = this.master;
+                System.setProperty("steeldb.master", "" + this.master);
+
                 //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
                 proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
                 
@@ -51,19 +55,21 @@ public class MessageHandler {
 		this.resHashes = new LinkedList<byte[]>();
 		this.operations = new LinkedList<Message>();
 		this.clientId = clientId;
-		master = 0;
 		logger.debug("Client " + clientId + "opened a connection. MessageHandler created");
 	}
 	
-	public MessageHandler(int clientId, boolean replica) {
+	public MessageHandler(int clientId, int master, boolean replica) {
                 //proxy = new ServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor()); // old code fo smart
+		this.master = master;
+                this.oldMaster = this.master;
+                System.setProperty("steeldb.master", "" + this.master);
+                               
                 proxy = new AsynchServiceProxy(clientId, CONFIG_FOLDER, new BFTComparator(), new BFTExtractor());
                 
                 //I suspect this optimization is causing read/write dependencies in
                 //non-masters, which prevents operations from being all executed
 		//transactionReadOnly = true;
 		this.clientId = clientId;
-		master = 0;
 //		logger.debug("Opening connection for client " + proxy.getProcessId());
 	}
 
@@ -174,7 +180,7 @@ public class MessageHandler {
 		
 		Message reply = Message.getMessage(response);
 		if(reply != null) {
-			master = reply.getMaster();
+			//master = reply.getMaster();
                         logger.debug("Reply opcode: " + m.getOpcode() + ", content: "  + reply.getContents());
 		} else {
                         logger.info("reply is null. " + m.getClientId() + ", opt: " + opCode + ", contents: " + m.getContents());

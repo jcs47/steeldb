@@ -42,16 +42,18 @@ public class Replica extends DefaultRecoverable {
     
     int count = 0;
     
-    public Replica(int id, Properties config) {
+    public Replica(int id, int master, Properties config) {
         
 		super();
 		connParams = new ConnectionParams(config);
-		mProcessor = new MessageProcessor(id, connParams.getDriver(), connParams.getUrl());
+		mProcessor = new MessageProcessor(id, master, connParams.getDriver(), connParams.getUrl());
                 this.id = id;
 		replica = new ServiceReplica(id,this,this);                
                 View view = replicaContext.getCurrentView();
 		mProcessor.setCurrentView(view);
 		logger.info("Replica started");
+                
+                if (id == master) logger.info("I am the master!");
 	}
         
         @Override
